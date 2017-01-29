@@ -1,0 +1,14 @@
+SET SQL_MODE=ANSI_QUOTES;
+
+CREATE DATABASE "testdb";
+
+USE "testdb";
+
+CREATE TABLE "music" (
+    "id" BIGINT UNSIGNED AUTO_INCREMENT,
+    "title" VARCHAR(255) NOT NULL,
+    "artist" VARCHAR(255) NOT NULL,
+    "duration" SMALLINT NOT NULL,
+    "created_at" TIMESTAMP NULL,
+    PRIMARY KEY ("id")
+) ENGINE InnoDB;

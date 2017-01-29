@@ -1,0 +1,3 @@
+rules:
+    doctrine.database_query_contains_string_and_variable_concatenation:
+        enabled: false
