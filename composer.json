@@ -15,7 +15,7 @@
   },
 	"description": "Simple abstraction for MySQL/MariaDB and PostgreSQL database server(s), compatible with PHP >= 5.3.",
   "homepage": "http://vaibhavpandeyvpz.github.io/databoss",
-  "keywords": ["mysql", "mariadb", "database", "abstraction"],
+  "keywords": ["mysql", "mariadb", "pgsql", "postgres", "database", "abstraction"],
   "license": "MIT",
   "name": "vaibhavpandeyvpz/databoss",
   "require": {
