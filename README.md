@@ -1,5 +1,5 @@
 # vaibhavpandeyvpz/databoss
-Simple abstraction for [MySQL](https://www.mysql.com/)/[MariaDB](https://mariadb.org/) and [PostgreSQL](https://www.postgresql.org/) database server(s), compatible with [PHP]() >= 5.3.
+Simple abstraction for [MySQL](https://www.mysql.com/)/[MariaDB](https://mariadb.org/) and [PostgreSQL](https://www.postgresql.org/) database server(s), compatible with [PHP](http://www.php.net/) >= 5.3.
 
 [![Build status][build-status-image]][build-status-url]
 [![Code Coverage][code-coverage-image]][code-coverage-url]
