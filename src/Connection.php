@@ -20,23 +20,17 @@ class Connection extends ConnectionAbstract
     /**
      * {@inheritdoc}
      */
-    public function count($table, $index = '*', array $filter = array(), array $sort = array(), $start = 0, $max = 0)
+    public function average($table, $column, array $filter = array(), array $sort = array(), $start = 0, $max = 0)
     {
-        $table = $this->table($table);
-        $selection = sprintf('COUNT(%s) AS "count"', $index === '*' ? $index : $this->escape($index, self::ESCAPE_COLUMN_WITH_TABLE));
-        $sql = "SELECT {$selection} FROM {$table}";
-        $params = null;
-        $where = $this->where($filter, $sort, $max, $start);
-        if (!empty($where['sql'])) {
-            $sql .= $where['sql'];
-            $params = $where['params'];
-        }
-        $result = $this->query($sql, (array)$params);
-        if (false !== $result) {
-            /** @noinspection PhpUndefinedFieldInspection */
-            return intval(is_object($result[0]) ? $result[0]->count : $result[0]['count']);
-        }
-        return false;
+        return $this->math($table, 'AVG', $column, $filter, $sort, $start, $max);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function count($table, $column = '*', array $filter = array(), array $sort = array(), $start = 0, $max = 0)
+    {
+        return $this->math($table, 'COUNT', $column, $filter, $sort, $start, $max);
     }
 
     /**
@@ -93,6 +87,22 @@ class Connection extends ConnectionAbstract
     /**
      * {@inheritdoc}
      */
+    public function max($table, $column, array $filter = array(), array $sort = array(), $start = 0, $max = 0)
+    {
+        return $this->math($table, 'MAX', $column, $filter, $sort, $start, $max);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function min($table, $column, array $filter = array(), array $sort = array(), $start = 0, $max = 0)
+    {
+        return $this->math($table, 'MIN', $column, $filter, $sort, $start, $max);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function select($table, $columns = null, array $filter = array(), array $sort = array(), $max = 0, $start = 0)
     {
         $table = $this->table($table, true);
@@ -115,6 +125,14 @@ class Connection extends ConnectionAbstract
             $params = $where['params'];
         }
         return $this->query($sql, (array)$params);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function sum($table, $column, array $filter = array(), array $sort = array(), $start = 0, $max = 0)
+    {
+        return $this->math($table, 'SUM', $column, $filter, $sort, $start, $max);
     }
 
     /**

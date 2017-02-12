@@ -56,7 +56,17 @@ abstract class ConnectionAbstract implements ConnectionInterface
     /**
      * @var array
      */
-    protected $options;
+    protected $options = array(
+        self::OPT_CHARSET => 'utf8',
+        self::OPT_DRIVER => self::DRIVER_MYSQL,
+        self::OPT_HOST => 'localhost',
+        self::OPT_OPTIONS => array(
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_OBJ,
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+        ),
+        self::OPT_PASSWORD => null,
+        self::OPT_PREFIX => null,
+    );
 
     /**
      * @var \PDO
@@ -68,18 +78,7 @@ abstract class ConnectionAbstract implements ConnectionInterface
      */
     public function __construct(array $options)
     {
-        $defaults = array(
-            self::OPT_CHARSET => 'utf8',
-            self::OPT_DRIVER => self::DRIVER_MYSQL,
-            self::OPT_HOST => 'localhost',
-            self::OPT_OPTIONS => array(
-                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-            ),
-            self::OPT_PASSWORD => null,
-            self::OPT_PREFIX => null,
-        );
-        $options = array_merge($defaults, $options);
+        $options = array_merge($this->options, (array)$options);
         $required = array(self::OPT_DATABASE, self::OPT_USERNAME);
         foreach ($required as $option) {
             if (empty($options[$option])) {
@@ -112,7 +111,7 @@ abstract class ConnectionAbstract implements ConnectionInterface
             $options[self::OPT_OPTIONS]
         );
         foreach ($commands as $command) {
-            $this->pdo->exec($command);
+            $this->execute($command);
         }
     }
 
@@ -163,7 +162,7 @@ abstract class ConnectionAbstract implements ConnectionInterface
     /**
      * {@inheritdoc}
      */
-    public function execute($sql, array $params = array())
+    public function execute($sql, array $params = null)
     {
         $stmt = $this->pdo->prepare($sql);
         if ($stmt->execute($params)) {
@@ -200,8 +199,13 @@ abstract class ConnectionAbstract implements ConnectionInterface
             switch ($operator) {
                 case '!':
                 case '!=':
-                case '<>':
-                    $operator = is_null($value) ? 'IS NOT' : '!=';
+                    if (is_null($value)) {
+                        $operator = 'IS NOT';
+                    } elseif (is_array($value)) {
+                        $operator = 'NOT IN';
+                    } else {
+                        $operator = '!=';
+                    }
                     break;
                 case '>':
                 case '>=':
@@ -215,15 +219,27 @@ abstract class ConnectionAbstract implements ConnectionInterface
                     $operator = 'NOT LIKE';
                     break;
                 default:
-                    $operator = is_null($value) ? 'IS' : '=';
+                    if (is_null($value)) {
+                        $operator = 'IS';
+                    } elseif (is_array($value)) {
+                        $operator = 'IN';
+                    } else {
+                        $operator = '=';
+                    }
                     break;
             }
             $clause = $this->escape($column, self::ESCAPE_COLUMN_WITH_TABLE) . ' ' . $operator;
             if (is_null($value)) {
                 $clause .= ' NULL';
+            } elseif (is_array($value)) {
+                $values = array();
+                foreach ($value as $item) {
+                    $values[] = is_int($item) ? $item : $this->escape($value);
+                }
+                $clause .= ' (' . implode($values, ',') . ')';
             } else {
                 $clause .= ' ?';
-                $params[] = $value;
+                $params[] = is_bool($value) ? ($value ? '1' : '0') : $value;
             }
             $sql[] = $clause;
         }
@@ -237,6 +253,14 @@ abstract class ConnectionAbstract implements ConnectionInterface
     public function id($sequence = null)
     {
         return $this->pdo->lastInsertId($sequence);
+    }
+
+    /**
+     * @return \PDO
+     */
+    public function pdo()
+    {
+        return $this->pdo;
     }
 
     /**
@@ -257,12 +281,41 @@ abstract class ConnectionAbstract implements ConnectionInterface
 
     /**
      * @param string $table
+     * @param string $operation
+     * @param string $column
+     * @param array|null $filter
+     * @param array|null $sort
+     * @param int $max
+     * @param int $start
+     * @return int|false
+     */
+    protected function math($table, $operation, $column = '*', array $filter = array(), array $sort = array(), $start = 0, $max = 0)
+    {
+        $table = $this->table($table);
+        $selection = sprintf('%s(%s) AS "value"', $operation, $column === '*' ? $column : $this->escape($column, self::ESCAPE_COLUMN_WITH_TABLE));
+        $sql = "SELECT {$selection} FROM {$table}";
+        $params = null;
+        $where = $this->where($filter, $sort, $max, $start);
+        if (!empty($where['sql'])) {
+            $sql .= $where['sql'];
+            $params = $where['params'];
+        }
+        $result = $this->query($sql, (array)$params);
+        if (false !== $result) {
+            /** @noinspection PhpUndefinedFieldInspection */
+            return intval(is_object($result[0]) ? $result[0]->value : $result[0]['value']);
+        }
+        return false;
+    }
+
+    /**
+     * @param string $table
      * @param bool $alias
      * @return string
      */
     protected function table($table, $alias = false)
     {
-        if (isset($this->options[self::OPT_PREFIX])) {
+        if (null !== $this->options[self::OPT_PREFIX]) {
             $table = $this->options[self::OPT_PREFIX] . $table;
         }
         return $this->escape($table, $alias ? self::ESCAPE_ALIAS : self::ESCAPE_COLUMN_OR_TABLE);

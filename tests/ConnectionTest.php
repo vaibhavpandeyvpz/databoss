@@ -71,32 +71,32 @@ class ConnectionTest extends \PHPUnit_Framework_TestCase
         $this->assertTrue($connection->exists('music'));
         $this->assertEquals(2, $connection->count('music'));
         // Get first entry from database
-        $this->assertInternalType('array', $entry = $connection->first('music'));
-        $this->assertEquals('YMCMB Heroes', $entry['title']);
-        $this->assertEquals('Jay Sean Ft. Tyga, Busta Rhymes & Cory Gunz', $entry['artist']);
-        $this->assertEquals(269, $entry['duration']);
-        $this->assertEquals($date1, $entry['created_at']);
-        $id1 = $entry['id'];
+        $this->assertInstanceOf('stdClass', $entry = $connection->first('music'));
+        $this->assertEquals('YMCMB Heroes', $entry->title);
+        $this->assertEquals('Jay Sean Ft. Tyga, Busta Rhymes & Cory Gunz', $entry->artist);
+        $this->assertEquals(269, $entry->duration);
+        $this->assertEquals($date1, $entry->created_at);
+        $id1 = $entry->id;
         // Get first entry from database
         $this->assertInternalType('array', $entries = $connection->select('music', '*', array('id{!}' => $id1)));
         $this->assertCount(1, $entries);
-        $this->assertInternalType('array', $entry = $entries[0]);
-        $this->assertEquals('La, La, La', $entry['title']);
-        $this->assertEquals('Auburn Ft. Iyaz', $entry['artist']);
-        $this->assertEquals(201, $entry['duration']);
-        $this->assertEquals($date2, $entry['created_at']);
-        $id2 = $entry['id'];
+        $this->assertInstanceOf('stdClass', $entry = $entries[0]);
+        $this->assertEquals('La, La, La', $entry->title);
+        $this->assertEquals('Auburn Ft. Iyaz', $entry->artist);
+        $this->assertEquals(201, $entry->duration);
+        $this->assertEquals($date2, $entry->created_at);
+        $id2 = $entry->id;
         // Get both entries with one column from database
         $this->assertInternalType('array', $entries = $connection->select('music', array('id')));
         $this->assertCount(2, $entries);
-        $this->assertInternalType('array', $entry = $entries[0]);
-        $this->assertEquals($id1, $entry['id']);
-        $this->assertInternalType('array', $entry = $entries[1]);
-        $this->assertEquals($id2, $entry['id']);
+        $this->assertInstanceOf('stdClass', $entry = $entries[0]);
+        $this->assertEquals($id1, $entry->id);
+        $this->assertInstanceOf('stdClass', $entry = $entries[1]);
+        $this->assertEquals($id2, $entry->id);
         // Try to update non existing value
         $this->assertEquals(1, $connection->update('music', array('duration' => 300), array('duration{!}' => 269)));
-        $this->assertInternalType('array', $entry = $connection->first('music', array('id' => $id2)));
-        $this->assertEquals(300, $entry['duration']);
+        $this->assertInstanceOf('stdClass', $entry = $connection->first('music', array('id' => $id2)));
+        $this->assertEquals(300, $entry->duration);
         // Count specific column + filters
         $this->assertEquals(1, $connection->count('music', 'id', array('duration' => 300)));
         $this->assertEquals(1, $connection->count('music', 'id', array('title{~}' => '%La%')));
@@ -129,14 +129,27 @@ class ConnectionTest extends \PHPUnit_Framework_TestCase
             ),
         )));
         // Test table aliasing
-        $this->assertInternalType('array', $entry = $connection->first('music{m}', array('m.id' => $id2)));
-        $this->assertEquals($id2, $entry['id']);
+        $this->assertInstanceOf('stdClass', $entry = $connection->first('music{m}', array('m.id' => $id2)));
+        $this->assertEquals($id2, $entry->id);
         // Test column aliasing
         $this->assertInternalType('array', $entries = $connection->select('music{m}', array('id', 'm.id{music_id}'), array('id' => $id2)));
         $this->assertCount(1, $entries);
-        $this->assertInternalType('array', $entry = $entries[0]);
-        $this->assertEquals($id2, $entry['id']);
-        $this->assertEquals($id2, $entry['music_id']);
+        $this->assertInstanceOf('stdClass', $entry = $entries[0]);
+        $this->assertEquals($id2, $entry->id);
+        $this->assertEquals($id2, $entry->music_id);
+        // Test array
+        $this->assertEquals(1, $connection->count('music', 'id', array('duration{=}' => array(269))));
+        $this->assertEquals(1, $connection->count('music', 'id', array('duration{!}' => array(269))));
+        $this->assertEquals(2, $connection->count('music', 'id', array('duration{=}' => array(269, 300))));
+        $this->assertEquals(0, $connection->count('music', 'id', array('duration{!=}' => array(269, 300))));
+        // Test average
+        $this->assertEquals(284, $connection->average('music', 'duration'));
+        // Test sum
+        $this->assertEquals(569, $connection->sum('music', 'duration'));
+        // Test max
+        $this->assertEquals(300, $connection->max('music', 'duration'));
+        // Test min
+        $this->assertEquals(269, $connection->min('music', 'duration'));
         // Test deletion
         $this->assertEquals(1, $connection->delete('music', array('id' => $id2)));
         $this->assertEquals(1, $connection->count('music'));

@@ -18,6 +18,17 @@ namespace Databoss;
 interface ConnectionInterface
 {
     /**
+     * @param string $table
+     * @param string $column
+     * @param array|null $filter
+     * @param array|null $sort
+     * @param int $max
+     * @param int $start
+     * @return int|false
+     */
+    public function average($table, $column, array $filter = array(), array $sort = array(), $max = 0, $start = 0);
+
+    /**
      * @param callable $callback
      * @return mixed
      */
@@ -25,14 +36,14 @@ interface ConnectionInterface
 
     /**
      * @param string $table
-     * @param string $index
+     * @param string $column
      * @param array|null $filter
      * @param array|null $sort
      * @param int $max
      * @param int $start
      * @return int|false
      */
-    public function count($table, $index = '*', array $filter = array(), array $sort = array(), $max = 0, $start = 0);
+    public function count($table, $column = '*', array $filter = array(), array $sort = array(), $max = 0, $start = 0);
 
     /**
      * @param string $table
@@ -55,7 +66,7 @@ interface ConnectionInterface
      * @param array|null $params
      * @return int|false
      */
-    public function execute($sql, array $params = array());
+    public function execute($sql, array $params = null);
 
     /**
      * @param string $table
@@ -87,6 +98,33 @@ interface ConnectionInterface
     public function insert($table, array $values);
 
     /**
+     * @param string $table
+     * @param string $column
+     * @param array|null $filter
+     * @param array|null $sort
+     * @param int $max
+     * @param int $start
+     * @return int|false
+     */
+    public function max($table, $column, array $filter = array(), array $sort = array(), $max = 0, $start = 0);
+
+    /**
+     * @param string $table
+     * @param string $column
+     * @param array|null $filter
+     * @param array|null $sort
+     * @param int $max
+     * @param int $start
+     * @return int|false
+     */
+    public function min($table, $column, array $filter = array(), array $sort = array(), $max = 0, $start = 0);
+
+    /**
+     * @return \PDO
+     */
+    public function pdo();
+
+    /**
      * @param string $sql
      * @param array|null $params
      * @return array|false
@@ -103,6 +141,17 @@ interface ConnectionInterface
      * @return array|false
      */
     public function select($table, $columns = null, array $filter = array(), array $sort = array(), $max = 0, $start = 0);
+
+    /**
+     * @param string $table
+     * @param string $column
+     * @param array|null $filter
+     * @param array|null $sort
+     * @param int $max
+     * @param int $start
+     * @return int|false
+     */
+    public function sum($table, $column, array $filter = array(), array $sort = array(), $max = 0, $start = 0);
 
     /**
      * @param string $table
