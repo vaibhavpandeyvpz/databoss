@@ -258,6 +258,8 @@ $results = $db->query('SELECT * FROM users WHERE age > ? AND active = ?', [18, t
 
 ## Connection Options
 
+### Using Array Options
+
 ```php
 $db = new Connection([
     Connection::OPT_DRIVER => DatabaseDriver::MYSQL->value,
@@ -273,6 +275,81 @@ $db = new Connection([
         \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
     ],
 ]);
+```
+
+### Using Option Builders (Recommended)
+
+For a more fluent and type-safe approach, use the option builder classes:
+
+#### MySQL/MariaDB
+
+```php
+use Databoss\Connection;
+use Databoss\Options\MySqlOptions;
+
+$db = new Connection(
+    (new MySqlOptions())
+        ->withHost('127.0.0.1')
+        ->withPort(3306)
+        ->withDatabase('mydb')
+        ->withUsername('root')
+        ->withPassword('password')
+        ->withCharset('utf8mb4')
+        ->withPrefix('app_')
+        ->withPdoOptions([
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_OBJ,
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+        ])
+        ->toArray()
+);
+```
+
+#### PostgreSQL
+
+```php
+use Databoss\Connection;
+use Databoss\Options\PostgresOptions;
+
+$db = new Connection(
+    (new PostgresOptions())
+        ->withHost('127.0.0.1')
+        ->withPort(5432)
+        ->withDatabase('mydb')
+        ->withUsername('postgres')
+        ->withPassword('password')
+        ->withCharset('utf8')
+        ->withPrefix('app_')
+        ->withPdoOptions([
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_OBJ,
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+        ])
+        ->toArray()
+);
+```
+
+#### SQLite
+
+```php
+use Databoss\Connection;
+use Databoss\Options\SqliteOptions;
+
+// File-based database
+$db = new Connection(
+    (new SqliteOptions())
+        ->withDatabase('/path/to/database.db')
+        ->withPrefix('app_')
+        ->withPdoOptions([
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_OBJ,
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+        ])
+        ->toArray()
+);
+
+// In-memory database (default)
+$db = new Connection(
+    (new SqliteOptions())
+        ->toArray()
+);
 ```
 
 ## Filter Syntax Reference
