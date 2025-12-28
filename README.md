@@ -373,24 +373,16 @@ The project includes Docker Compose configuration for running tests:
 
 ```bash
 # Start database containers (MySQL and PostgreSQL)
-make up
+docker compose up -d
 
-# Run tests
-make test
+# Wait for databases to be ready, then run tests
+./vendor/bin/phpunit
 
 # Run tests with coverage
-make test-coverage
+XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-text
 
 # Stop database containers
-make down
-```
-
-Or use Docker Compose directly:
-
-```bash
-docker-compose up -d
-./vendor/bin/phpunit
-docker-compose down
+docker compose down
 ```
 
 Tests run against MySQL, PostgreSQL, and SQLite to ensure compatibility across all supported databases.
