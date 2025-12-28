@@ -324,14 +324,28 @@ abstract class ConnectionAbstract implements ConnectionInterface
             if ($value === null) {
                 $clause .= ' NULL';
             } elseif (is_array($value)) {
-                $values = [];
-                foreach ($value as $item) {
-                    $escaped = is_int($item) ? (string) $item : $this->escape((string) $item);
-                    if ($escaped !== false) {
-                        $values[] = $escaped;
+                if ($value === []) {
+                    // Empty array for IN/NOT IN - invalid SQL, so use always-false condition
+                    $clause = '1 = 0';
+                } else {
+                    $values = [];
+                    foreach ($value as $item) {
+                        if ($item === null) {
+                            // NULL values in arrays are skipped (use IS NULL separately)
+                            continue;
+                        }
+                        $escaped = is_int($item) || is_float($item) ? (string) $item : $this->escape((string) $item);
+                        if ($escaped !== false) {
+                            $values[] = $escaped;
+                        }
+                    }
+                    if ($values === []) {
+                        // All values were NULL or invalid - use always-false condition
+                        $clause = '1 = 0';
+                    } else {
+                        $clause .= ' ('.implode(',', $values).')';
                     }
                 }
-                $clause .= ' ('.implode(',', $values).')';
             } else {
                 $clause .= ' ?';
                 $params[] = is_bool($value) ? ($value ? '1' : '0') : $value;
