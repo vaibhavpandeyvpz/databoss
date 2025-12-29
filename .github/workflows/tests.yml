@@ -107,7 +107,7 @@ jobs:
         run: |
           mysql -h 127.0.0.1 -u root -proot testdb < dumps/mysql.sql
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d testdb -f dumps/postgres.sql
-          /opt/mssql-tools/bin/sqlcmd -S 127.0.0.1 -U sa -P 'YourStrong!Passw0rd' -i dumps/sqlserver.sql
+          sqlcmd -S 127.0.0.1 -U sa -P 'YourStrong!Passw0rd' -i dumps/sqlserver.sql
 
       - name: Run tests
         run: vendor/bin/phpunit --coverage-text
