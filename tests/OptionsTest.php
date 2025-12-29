@@ -16,6 +16,7 @@ namespace Databoss;
 use Databoss\Options\MySqlOptions;
 use Databoss\Options\PostgresOptions;
 use Databoss\Options\SqliteOptions;
+use Databoss\Options\SqlsrvOptions;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -109,6 +110,71 @@ class OptionsTest extends TestCase
         }
     }
 
+    public function test_sqlsrv_options_builder(): void
+    {
+        $options = (new SqlsrvOptions)
+            ->withHost('127.0.0.1')
+            ->withPort(1433)
+            ->withDatabase('testdb')
+            ->withUsername('sa')
+            ->withPassword('YourStrong!Passw0rd')
+            ->withCharset('UTF-8')
+            ->withPrefix('app_')
+            ->toArray();
+
+        $this->assertEquals(DatabaseDriver::SQLSRV->value, $options[Connection::OPT_DRIVER]);
+        $this->assertEquals('127.0.0.1', $options[Connection::OPT_HOST]);
+        $this->assertEquals(1433, $options[Connection::OPT_PORT]);
+        $this->assertEquals('testdb', $options[Connection::OPT_DATABASE]);
+        $this->assertEquals('sa', $options[Connection::OPT_USERNAME]);
+        $this->assertEquals('YourStrong!Passw0rd', $options[Connection::OPT_PASSWORD]);
+        $this->assertEquals('UTF-8', $options[Connection::OPT_CHARSET]);
+        $this->assertEquals('app_', $options[Connection::OPT_PREFIX]);
+    }
+
+    public function test_sqlsrv_options_defaults(): void
+    {
+        $options = (new SqlsrvOptions)
+            ->toArray();
+
+        $this->assertEquals(DatabaseDriver::SQLSRV->value, $options[Connection::OPT_DRIVER]);
+        $this->assertEquals('localhost', $options[Connection::OPT_HOST]);
+        $this->assertEquals(1433, $options[Connection::OPT_PORT]);
+        $this->assertEquals('UTF-8', $options[Connection::OPT_CHARSET]);
+    }
+
+    public function test_sqlsrv_options_with_null_password(): void
+    {
+        $options = (new SqlsrvOptions)
+            ->withHost('127.0.0.1')
+            ->withDatabase('testdb')
+            ->withUsername('sa')
+            ->withPassword(null)
+            ->toArray();
+
+        $this->assertEquals(DatabaseDriver::SQLSRV->value, $options[Connection::OPT_DRIVER]);
+        $this->assertNull($options[Connection::OPT_PASSWORD]);
+    }
+
+    public function test_sqlsrv_options_with_connection(): void
+    {
+        $options = (new SqlsrvOptions)
+            ->withHost('127.0.0.1')
+            ->withDatabase('testdb')
+            ->withUsername('sa')
+            ->withPassword('YourStrong!Passw0rd')
+            ->toArray();
+
+        // This should not throw an exception if database is available
+        try {
+            $connection = new Connection($options);
+            $this->assertInstanceOf(ConnectionInterface::class, $connection);
+        } catch (\Exception $e) {
+            // If database is not available, that's okay for this test
+            $this->assertStringContainsString('database', strtolower($e->getMessage()));
+        }
+    }
+
     public function test_options_with_pdo_options(): void
     {
         $pdoOptions = [
@@ -120,6 +186,23 @@ class OptionsTest extends TestCase
             ->withHost('127.0.0.1')
             ->withDatabase('testdb')
             ->withUsername('root')
+            ->withPdoOptions($pdoOptions)
+            ->toArray();
+
+        $this->assertEquals($pdoOptions, $options[Connection::OPT_OPTIONS]);
+    }
+
+    public function test_sqlsrv_options_with_pdo_options(): void
+    {
+        $pdoOptions = [
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_OBJ,
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+        ];
+
+        $options = (new SqlsrvOptions)
+            ->withHost('127.0.0.1')
+            ->withDatabase('testdb')
+            ->withUsername('sa')
             ->withPdoOptions($pdoOptions)
             ->toArray();
 

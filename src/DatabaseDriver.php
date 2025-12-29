@@ -28,4 +28,7 @@ enum DatabaseDriver: string
 
     /** SQLite database driver */
     case SQLITE = 'sqlite';
+
+    /** Microsoft SQL Server database driver */
+    case SQLSRV = 'sqlsrv';
 }

@@ -119,11 +119,12 @@ class Connection implements ConnectionInterface
         // Validate and get driver
         $driver = DatabaseDriver::tryFrom($options[self::OPT_DRIVER] ?? '')
             ?? throw new \UnexpectedValueException(sprintf(
-                "Unsupported driver '%s' provided, '%s', '%s' or '%s' expected",
+                "Unsupported driver '%s' provided, '%s', '%s', '%s' or '%s' expected",
                 $options[self::OPT_DRIVER] ?? 'null',
                 DatabaseDriver::MYSQL->value,
                 DatabaseDriver::POSTGRES->value,
-                DatabaseDriver::SQLITE->value
+                DatabaseDriver::SQLITE->value,
+                DatabaseDriver::SQLSRV->value
             ));
 
         // SQLite doesn't require database, username, or password
@@ -138,7 +139,7 @@ class Connection implements ConnectionInterface
 
         $commands = [];
 
-        if ($driver !== DatabaseDriver::SQLITE) {
+        if ($driver !== DatabaseDriver::SQLITE && $driver !== DatabaseDriver::SQLSRV) {
             $commands[] = sprintf("SET NAMES '%s'", $options[self::OPT_CHARSET]);
         }
 
@@ -146,6 +147,7 @@ class Connection implements ConnectionInterface
             DatabaseDriver::MYSQL => $this->buildMysqlDsn($options),
             DatabaseDriver::POSTGRES => $this->buildPostgresDsn($options),
             DatabaseDriver::SQLITE => $this->buildSqliteDsn($options),
+            DatabaseDriver::SQLSRV => $this->buildSqlsrvDsn($options),
         };
 
         if ($driver === DatabaseDriver::MYSQL) {
@@ -217,6 +219,30 @@ class Connection implements ConnectionInterface
         $database = $options[self::OPT_DATABASE] ?? ':memory:';
 
         return "sqlite:{$database}";
+    }
+
+    /**
+     * Build SQL Server DSN string.
+     *
+     * @param  array<string, mixed>  $options  Connection options
+     * @return string The SQL Server DSN string
+     */
+    private function buildSqlsrvDsn(array $options): string
+    {
+        $parts = [
+            'Server' => $options[self::OPT_HOST].(isset($options[self::OPT_PORT]) ? ','.$options[self::OPT_PORT] : ''),
+            'Database' => $options[self::OPT_DATABASE],
+        ];
+
+        // SQL Server PDO driver doesn't support CharacterSet in DSN
+        // Character set is handled via connection options or SET statements if needed
+
+        $dsnParts = [];
+        foreach ($parts as $key => $value) {
+            $dsnParts[] = "{$key}={$value}";
+        }
+
+        return 'sqlsrv:'.implode(';', $dsnParts);
     }
 
     /**
@@ -492,6 +518,10 @@ class Connection implements ConnectionInterface
         return match ($driver) {
             DatabaseDriver::POSTGRES, DatabaseDriver::SQLITE => " LIMIT {$max} OFFSET {$start}",
             DatabaseDriver::MYSQL => $start > 0 ? " LIMIT {$start}, {$max}" : " LIMIT {$max}",
+            // SQL Server requires ORDER BY when using OFFSET
+            // When start > 0, we use OFFSET/FETCH (requires ORDER BY)
+            // When start = 0, we'll use TOP in SELECT clause (handled separately)
+            DatabaseDriver::SQLSRV => " OFFSET {$start} ROWS FETCH NEXT {$max} ROWS ONLY",
         };
     }
 
@@ -516,12 +546,27 @@ class Connection implements ConnectionInterface
 
         // For SELECT queries (allowOrderBy=true), always apply ORDER BY and LIMIT
         // For UPDATE/DELETE (allowOrderBy=false), only MySQL supports ORDER BY/LIMIT natively
+        // SQL Server requires TOP clause for UPDATE/DELETE, handled separately
         if ($sort !== [] && ($allowOrderBy || $driver === DatabaseDriver::MYSQL)) {
             $where['sql'] .= $this->buildOrderBy($sort);
         }
 
+        // SQL Server: When using OFFSET (start > 0), ORDER BY is required
+        // When start = 0 and no ORDER BY, TOP is used in SELECT clause (handled in select method)
         if ($max > 0 && ($allowOrderBy || $driver === DatabaseDriver::MYSQL)) {
-            $where['sql'] .= $this->buildLimit($max, $start);
+            // SQL Server requires ORDER BY when using OFFSET (start > 0)
+            if ($driver === DatabaseDriver::SQLSRV && $start > 0 && $sort === [] && $allowOrderBy) {
+                throw new \InvalidArgumentException('ORDER BY is required when using OFFSET with SQL Server. Please provide a sort parameter.');
+            }
+
+            $limitClause = $this->buildLimit($max, $start);
+            // For SQL Server with start=0 and no ORDER BY, buildLimit returns empty (TOP handled in SELECT)
+            if ($driver === DatabaseDriver::SQLSRV && $start === 0 && $sort === []) {
+                $limitClause = '';
+            }
+            if ($limitClause !== '') {
+                $where['sql'] .= $limitClause;
+            }
         }
 
         return $where;

@@ -47,15 +47,35 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        ports:
+          - 1433:1433
+        env:
+          ACCEPT_EULA: "Y"
+          SA_PASSWORD: "YourStrong!Passw0rd"
+          MSSQL_PID: "Developer"
+        options: >-
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong!Passw0rd -Q 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install unixodbc (Linux/macOS requirement)
+        run: |
+          sudo apt-get update
+          sudo apt-get install unixodbc -y
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-version }}
           coverage: xdebug
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite, pdo_sqlsrv
           tools: composer
 
       - name: Get composer cache directory
@@ -82,6 +102,10 @@ jobs:
         run: |
           mysql -h 127.0.0.1 -u root -proot testdb < dumps/mysql.sql
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d testdb -f dumps/postgres.sql
+          # Initialize SQL Server schema
+          # The health check ensures SQL Server is ready, so we can directly run the initialization
+          # Use Docker to run sqlcmd and connect to the SQL Server service on localhost
+          docker run --rm --add-host=host.docker.internal:host-gateway -v ${{ github.workspace }}/dumps:/dumps mcr.microsoft.com/mssql/server:2022-latest bash -c "/opt/mssql-tools/bin/sqlcmd -S host.docker.internal -U sa -P 'YourStrong!Passw0rd' -i /dumps/sqlserver.sql"
 
       - name: Run tests
         run: vendor/bin/phpunit --coverage-text

@@ -48,8 +48,8 @@ trait HighLevelOps
         $tableEscaped = $this->table($table);
 
         // MySQL supports ORDER BY/LIMIT in DELETE natively
-        // PostgreSQL and SQLite require a subquery approach
-        if (($driver === DatabaseDriver::POSTGRES || $driver === DatabaseDriver::SQLITE) && ($sort !== [] || $max > 0)) {
+        // PostgreSQL, SQLite, and SQL Server require a subquery approach
+        if (($driver === DatabaseDriver::POSTGRES || $driver === DatabaseDriver::SQLITE || $driver === DatabaseDriver::SQLSRV) && ($sort !== [] || $max > 0)) {
             return $this->deleteWithSubquery($tableEscaped, $table, $filter, $sort, $max, $start);
         }
 
@@ -144,6 +144,7 @@ trait HighLevelOps
      */
     public function select(string $table, array|string|null $columns = null, array $filter = [], array $sort = [], int $max = 0, int $start = 0): array|false
     {
+        $driver = $this->driver();
         $table = $this->table($table, true);
 
         $selection = match (true) {
@@ -152,8 +153,21 @@ trait HighLevelOps
             default => '*',
         };
 
-        $sql = "SELECT {$selection} FROM {$table}";
-        $where = $this->where($filter, $sort, $max, $start);
+        // SQL Server: Use TOP when start=0 and no ORDER BY (TOP must be in SELECT clause)
+        // When we have ORDER BY, we must use OFFSET/FETCH (even with start=0) because TOP can't be combined with ORDER BY
+        $topClause = '';
+        $skipLimitInWhere = false;
+        if ($driver === DatabaseDriver::SQLSRV && $max > 0 && $start === 0 && $sort === []) {
+            $topClause = " TOP {$max}";
+            $skipLimitInWhere = true; // Don't add LIMIT in where() since we're using TOP
+        } elseif ($driver === DatabaseDriver::SQLSRV && $max > 0 && $sort !== []) {
+            // When ORDER BY is present, we must use OFFSET/FETCH, not TOP
+            // Let where() handle OFFSET/FETCH by passing max and start
+            $skipLimitInWhere = false;
+        }
+
+        $sql = "SELECT{$topClause} {$selection} FROM {$table}";
+        $where = $this->where($filter, $sort, $skipLimitInWhere ? 0 : $max, $start);
         if ($where['sql'] !== '') {
             $sql .= $where['sql'];
         }
@@ -201,8 +215,8 @@ trait HighLevelOps
         $params = array_values($values);
 
         // MySQL supports ORDER BY/LIMIT in UPDATE natively
-        // PostgreSQL and SQLite require a subquery approach
-        if (($driver === DatabaseDriver::POSTGRES || $driver === DatabaseDriver::SQLITE) && ($sort !== [] || $max > 0)) {
+        // PostgreSQL, SQLite, and SQL Server require a subquery approach
+        if (($driver === DatabaseDriver::POSTGRES || $driver === DatabaseDriver::SQLITE || $driver === DatabaseDriver::SQLSRV) && ($sort !== [] || $max > 0)) {
             return $this->updateWithSubquery($tableEscaped, $table, $columns, $params, $filter, $sort, $max, $start);
         }
 
@@ -231,6 +245,7 @@ trait HighLevelOps
      */
     private function buildIdSubquery(string $table, string $primaryKey = 'id', array $filter = [], array $sort = [], int $max = 0, int $start = 0): array
     {
+        $driver = $this->driver();
         $tableEscaped = $this->table($table);
         $primaryKeyEscaped = $this->escape($primaryKey, EscapeMode::COLUMN_OR_TABLE);
 
@@ -242,11 +257,30 @@ trait HighLevelOps
             $sql .= " WHERE {$where['sql']}";
         }
 
-        // Add ORDER BY (always allowed in SELECT subqueries)
-        $sql .= $this->buildOrderBy($sort);
+        // SQL Server: ORDER BY is required when using OFFSET (start > 0)
+        // If we have ORDER BY, we use OFFSET/FETCH (even with start=0)
+        // If we don't have ORDER BY and start=0, we can use TOP
+        if ($driver === DatabaseDriver::SQLSRV) {
+            if ($start > 0 && $sort === []) {
+                throw new \InvalidArgumentException('ORDER BY is required when using OFFSET with SQL Server. Please provide a sort parameter.');
+            }
 
-        // Add LIMIT/OFFSET
-        $sql .= $this->buildLimit($max, $start);
+            if ($sort !== []) {
+                // When ORDER BY is present, we must use OFFSET/FETCH (not TOP)
+                $sql .= $this->buildOrderBy($sort);
+                // Add OFFSET/FETCH
+                $sql .= $this->buildLimit($max, $start);
+            } elseif ($max > 0 && $start === 0) {
+                // When no ORDER BY and start=0, we can use TOP
+                $sql = str_replace("SELECT {$primaryKeyEscaped}", "SELECT TOP {$max} {$primaryKeyEscaped}", $sql);
+            }
+        } else {
+            // For other databases, use standard ORDER BY and LIMIT
+            if ($sort !== []) {
+                $sql .= $this->buildOrderBy($sort);
+            }
+            $sql .= $this->buildLimit($max, $start);
+        }
 
         return ['sql' => $sql, 'params' => $where['params']];
     }

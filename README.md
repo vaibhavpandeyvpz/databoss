@@ -6,11 +6,11 @@
 [![License](https://img.shields.io/packagist/l/vaibhavpandeyvpz/databoss.svg?style=flat-square)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/vaibhavpandeyvpz/databoss/tests.yml?branch=master&style=flat-square)](https://github.com/vaibhavpandeyvpz/databoss/actions)
 
-A simple, elegant database abstraction layer for [MySQL](https://www.mysql.com/)/[MariaDB](https://mariadb.org/), [PostgreSQL](https://www.postgresql.org/), and [SQLite](https://www.sqlite.org/) databases. Built with PHP 8.2+ features, providing a fluent API for common database operations without the complexity of full ORMs.
+A simple, elegant database abstraction layer for [MySQL](https://www.mysql.com/)/[MariaDB](https://mariadb.org/), [PostgreSQL](https://www.postgresql.org/), [SQLite](https://www.sqlite.org/), and [Microsoft SQL Server](https://www.microsoft.com/sql-server) databases. Built with PHP 8.2+ features, providing a fluent API for common database operations without the complexity of full ORMs.
 
 ## Features
 
-- **Multi-database support**: MySQL/MariaDB, PostgreSQL, and SQLite
+- **Multi-database support**: MySQL/MariaDB, PostgreSQL, SQLite, and Microsoft SQL Server
 - **Simple API**: Intuitive methods for CRUD operations
 - **Advanced filtering**: Powerful filter syntax with support for operators, nested conditions, and array values
 - **Type-safe**: Full PHP 8.2+ type declarations throughout
@@ -25,7 +25,7 @@ A simple, elegant database abstraction layer for [MySQL](https://www.mysql.com/)
 
 - PHP >= 8.2
 - PDO extension
-- One of: `ext-pdo_mysql`, `ext-pdo_pgsql`, or `ext-pdo_sqlite` (depending on your database)
+- One of: `ext-pdo_mysql`, `ext-pdo_pgsql`, `ext-pdo_sqlite`, or `ext-pdo_sqlsrv` (depending on your database)
 
 ## Installation
 
@@ -68,6 +68,16 @@ $db = new Connection([
 $db = new Connection([
     Connection::OPT_DRIVER => DatabaseDriver::SQLITE->value,
     Connection::OPT_DATABASE => ':memory:',
+]);
+
+// Microsoft SQL Server
+$db = new Connection([
+    Connection::OPT_DRIVER => DatabaseDriver::SQLSRV->value,
+    Connection::OPT_HOST => 'localhost',
+    Connection::OPT_PORT => 1433,
+    Connection::OPT_DATABASE => 'mydb',
+    Connection::OPT_USERNAME => 'sa',
+    Connection::OPT_PASSWORD => 'YourStrong!Passw0rd',
 ]);
 ```
 
@@ -181,6 +191,10 @@ $db->select('users', '*', [], [], 10); // First 10 records
 
 // Limit with offset
 $db->select('users', '*', [], [], 10, 20); // Records 21-30
+
+// Note: SQL Server requires ORDER BY when using OFFSET
+// The API will throw an InvalidArgumentException if OFFSET is used without ORDER BY on SQL Server
+$db->select('users', '*', [], ['id' => 'ASC'], 10, 20); // SQL Server requires sort parameter
 ```
 
 ## Aggregation Functions
@@ -199,6 +213,9 @@ $avgAge = $db->average('users', 'age');
 // Min/Max
 $oldestUser = $db->min('users', 'age');
 $newestUser = $db->max('users', 'created_at');
+
+// Generic math function (for custom aggregations)
+$customAgg = $db->math('users', 'AVG', 'age', ['active' => true]);
 ```
 
 ## Transactions
@@ -300,7 +317,7 @@ $db->drop('users', 'email');
 ### Modify Column
 
 ```php
-// Modify a column (MySQL and PostgreSQL only, SQLite not supported)
+// Modify a column (MySQL, PostgreSQL, and SQL Server only, SQLite not supported)
 $db->modify('users', 'email', [
     'type' => 'VARCHAR(500)',
     'null' => false,
@@ -339,22 +356,33 @@ $db->foreign('users', 'client_id', ['clients', 'id'], 'fk_users_client_id');
 **Note**: DDL operations handle database-specific differences automatically:
 
 - **Column Type Translation**: Common types are automatically translated to database-specific equivalents:
-    - `BOOLEAN` → `TINYINT(1)` (MySQL), `BOOLEAN` (PostgreSQL), `INTEGER` (SQLite)
-    - `TEXT` types → Appropriate text types for each database
-    - `BLOB`/`BYTEA` → Corrected for each database
-    - `SERIAL`/`BIGSERIAL` → `INT AUTO_INCREMENT` (MySQL), `SERIAL`/`BIGSERIAL` (PostgreSQL), `INTEGER` (SQLite)
-    - `DECIMAL`/`NUMERIC` → `DECIMAL` (MySQL/PostgreSQL), `REAL` (SQLite)
-    - `DATETIME` → `DATETIME` (MySQL), `TIMESTAMP` (PostgreSQL), `TEXT` (SQLite)
-    - `JSON` → `JSON` (MySQL/PostgreSQL), `TEXT` (SQLite)
+    - `BOOLEAN` → `TINYINT(1)` (MySQL), `BOOLEAN` (PostgreSQL), `INTEGER` (SQLite), `BIT` (SQL Server)
+    - `TEXT` types → Appropriate text types for each database (`NVARCHAR(MAX)` for SQL Server)
+    - `BLOB`/`BYTEA` → Corrected for each database (`VARBINARY(MAX)` for SQL Server)
+    - `SERIAL`/`BIGSERIAL` → `INT AUTO_INCREMENT` (MySQL), `SERIAL`/`BIGSERIAL` (PostgreSQL), `INTEGER` (SQLite), `INT IDENTITY(1,1)` (SQL Server)
+    - `DECIMAL`/`NUMERIC` → `DECIMAL` (MySQL/PostgreSQL/SQL Server), `REAL` (SQLite)
+    - `DATETIME` → `DATETIME` (MySQL), `TIMESTAMP` (PostgreSQL), `TEXT` (SQLite), `DATETIME2` (SQL Server)
+    - `JSON` → `JSON` (MySQL/PostgreSQL), `TEXT` (SQLite), `NVARCHAR(MAX)` (SQL Server)
     - And many more...
 
-- **Auto-increment columns**: MySQL uses `AUTO_INCREMENT`, PostgreSQL uses `SERIAL`/`BIGSERIAL`, SQLite uses `INTEGER PRIMARY KEY AUTOINCREMENT`
+- **Auto-increment columns**: MySQL uses `AUTO_INCREMENT`, PostgreSQL uses `SERIAL`/`BIGSERIAL`, SQLite uses `INTEGER PRIMARY KEY AUTOINCREMENT`, SQL Server uses `IDENTITY(1,1)`
 
-- **MODIFY COLUMN**: Not supported in SQLite (requires table recreation)
+- **MODIFY COLUMN**: Not supported in SQLite (requires table recreation). Supported in MySQL, PostgreSQL, and SQL Server.
 
-- **Index syntax**: Automatically adjusted for MySQL (`DROP INDEX ... ON table`) vs PostgreSQL/SQLite (`DROP INDEX ...`)
+- **Index syntax**: Automatically adjusted for each database:
+    - MySQL: `DROP INDEX ... ON table`
+    - PostgreSQL/SQLite: `DROP INDEX ...`
+    - SQL Server: `DROP INDEX ... ON table`
 
-- **Foreign keys**: SQLite has limited support (requires `PRAGMA foreign_keys = ON`)
+- **Foreign keys**: SQLite has limited support (requires `PRAGMA foreign_keys = ON`). Fully supported in MySQL, PostgreSQL, and SQL Server.
+
+- **ORDER BY with LIMIT/OFFSET**: SQL Server requires `ORDER BY` when using `OFFSET`. The API enforces this requirement.
+
+- **IF NOT EXISTS/IF EXISTS**: Handled automatically:
+    - MySQL: Native `IF NOT EXISTS`/`IF EXISTS` support
+    - PostgreSQL: `IF NOT EXISTS` for tables, exception handling for databases
+    - SQLite: Native `IF NOT EXISTS`/`IF EXISTS` support
+    - SQL Server: Uses `IF OBJECT_ID` checks for tables, `sys.databases` checks for databases
 
 You can use common type names and they will be automatically translated. For example, `'type' => 'BOOLEAN'` works across all databases without needing to know the database-specific type.
 
@@ -464,6 +492,29 @@ $db = new Connection(
 );
 ```
 
+#### Microsoft SQL Server
+
+```php
+use Databoss\Connection;
+use Databoss\Options\SqlsrvOptions;
+
+$db = new Connection(
+    (new SqlsrvOptions())
+        ->withHost('127.0.0.1')
+        ->withPort(1433)
+        ->withDatabase('mydb')
+        ->withUsername('sa')
+        ->withPassword('YourStrong!Passw0rd')
+        ->withCharset('UTF-8')
+        ->withPrefix('app_')
+        ->withPdoOptions([
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_OBJ,
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+        ])
+        ->toArray()
+);
+```
+
 ## Filter Syntax Reference
 
 | Syntax                      | SQL Operator                 | Example                         |
@@ -484,7 +535,7 @@ $db = new Connection(
 The project includes Docker Compose configuration for running tests:
 
 ```bash
-# Start database containers (MySQL and PostgreSQL)
+# Start database containers (MySQL, PostgreSQL, and SQL Server)
 docker compose up -d
 
 # Wait for databases to be ready, then run tests
@@ -497,7 +548,13 @@ XDEBUG_MODE=coverage ./vendor/bin/phpunit --coverage-text
 docker compose down
 ```
 
-Tests run against MySQL, PostgreSQL, and SQLite to ensure compatibility across all supported databases.
+**Note**: SQL Server requires the `ext-pdo_sqlsrv` extension to be installed. On macOS, you can install it via PECL:
+
+```bash
+pecl install sqlsrv
+```
+
+Tests run against MySQL, PostgreSQL, SQLite, and SQL Server to ensure compatibility across all supported databases.
 
 ## API Reference
 
@@ -515,6 +572,7 @@ Tests run against MySQL, PostgreSQL, and SQLite to ensure compatibility across a
 - `insert(string $table, array $values): int|false` - Insert record
 - `max(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false` - Get maximum value
 - `min(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false` - Get minimum value
+- `math(string $table, string $operation, string $column = '*', array $filter = [], array $sort = [], int $start = 0, int $max = 0): int|false` - Execute a mathematical aggregation function (AVG, COUNT, MAX, MIN, SUM)
 - `pdo(): \PDO` - Get underlying PDO instance
 - `query(string $sql, array $params = []): array|false` - Execute SELECT query
 - `select(string $table, array|string|null $columns = null, array $filter = [], array $sort = [], int $max = 0, int $start = 0): array|false` - Select records

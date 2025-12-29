@@ -60,17 +60,33 @@ trait DdlOps
             return false;
         }
 
-        $sql = match ($driver) {
-            DatabaseDriver::MYSQL => "CREATE DATABASE IF NOT EXISTS {$databaseEscaped}",
-            DatabaseDriver::POSTGRES => "CREATE DATABASE {$databaseEscaped}",
-            default => null,
-        };
+        // SQL Server: CREATE DATABASE must be executed from master database context
+        // and doesn't support IF NOT EXISTS (use sys.databases check instead)
+        if ($driver === DatabaseDriver::SQLSRV) {
+            $databaseUnquoted = str_replace(['[', ']'], '', $databaseEscaped);
+            $sql = "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = N'{$databaseUnquoted}') CREATE DATABASE {$databaseEscaped}";
+        } else {
+            $sql = match ($driver) {
+                DatabaseDriver::MYSQL => "CREATE DATABASE IF NOT EXISTS {$databaseEscaped}",
+                // PostgreSQL doesn't support IF NOT EXISTS for CREATE DATABASE
+                DatabaseDriver::POSTGRES => "CREATE DATABASE {$databaseEscaped}",
+                default => null,
+            };
+        }
 
         if ($sql === null) {
             return false;
         }
 
-        return $this->execute($sql) !== false;
+        try {
+            return $this->execute($sql) !== false;
+        } catch (\PDOException $e) {
+            // PostgreSQL throws exception if database already exists (expected behavior)
+            if ($driver === DatabaseDriver::POSTGRES && str_contains($e->getMessage(), 'already exists')) {
+                return true; // Database exists, consider it success
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -123,7 +139,14 @@ trait DdlOps
             $primaryKeyClause = ', PRIMARY KEY ('.implode(', ', $primaryKeys).')';
         }
 
-        $sql = "CREATE TABLE{$ifNotExistsClause} {$tableEscaped} (".implode(', ', $columnDefinitions).$primaryKeyClause.')';
+        // SQL Server doesn't support IF NOT EXISTS in CREATE TABLE (use IF OBJECT_ID check instead)
+        if ($driver === DatabaseDriver::SQLSRV && $ifNotExists) {
+            // OBJECT_ID needs unquoted table name
+            $tableUnquoted = str_replace('"', '', $tableEscaped);
+            $sql = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{$tableUnquoted}') AND type in (N'U')) CREATE TABLE {$tableEscaped} (".implode(', ', $columnDefinitions).$primaryKeyClause.')';
+        } else {
+            $sql = "CREATE TABLE{$ifNotExistsClause} {$tableEscaped} (".implode(', ', $columnDefinitions).$primaryKeyClause.')';
+        }
 
         // Add MySQL-specific engine
         if ($driver === DatabaseDriver::MYSQL) {
@@ -181,6 +204,13 @@ trait DdlOps
             // SQLite auto-increment columns are always NOT NULL and PRIMARY KEY
             $null = false;
             $primary = false; // Already has PRIMARY KEY in definition
+        } elseif ($autoIncrement && $driver === DatabaseDriver::SQLSRV) {
+            // SQL Server: IDENTITY(1,1) (must be NOT NULL)
+            if (stripos($type, 'INT') === false) {
+                $type = 'BIGINT';
+            }
+            $parts[] = $type.' IDENTITY(1,1)';
+            $null = false; // Auto-increment columns must be NOT NULL
         } else {
             $parts[] = $type;
         }
@@ -195,7 +225,11 @@ trait DdlOps
             if (is_string($default)) {
                 $defaultEscaped = $this->pdo->quote($default);
             } elseif (is_bool($default)) {
-                $defaultEscaped = $driver === DatabaseDriver::POSTGRES ? ($default ? 'TRUE' : 'FALSE') : ($default ? '1' : '0');
+                $defaultEscaped = match ($driver) {
+                    DatabaseDriver::POSTGRES => ($default ? 'TRUE' : 'FALSE'),
+                    DatabaseDriver::SQLSRV => ($default ? '1' : '0'),
+                    default => ($default ? '1' : '0'),
+                };
             } elseif (is_numeric($default)) {
                 $defaultEscaped = (string) $default;
             } else {
@@ -334,6 +368,43 @@ trait DdlOps
                 'JSONB' => 'TEXT',
                 'UUID' => 'TEXT',
             ],
+            DatabaseDriver::SQLSRV => [
+                'BOOLEAN' => 'BIT',
+                'BOOL' => 'BIT',
+                'TEXT' => 'NVARCHAR(MAX)',
+                'LONGTEXT' => 'NVARCHAR(MAX)',
+                'MEDIUMTEXT' => 'NVARCHAR(MAX)',
+                'TINYTEXT' => 'NVARCHAR(MAX)',
+                'BLOB' => 'VARBINARY(MAX)',
+                'LONGBLOB' => 'VARBINARY(MAX)',
+                'MEDIUMBLOB' => 'VARBINARY(MAX)',
+                'TINYBLOB' => 'VARBINARY(MAX)',
+                'BYTEA' => 'VARBINARY(MAX)',
+                'SERIAL' => 'INT IDENTITY(1,1)',
+                'BIGSERIAL' => 'BIGINT IDENTITY(1,1)',
+                'INTEGER' => 'INT',
+                'INT' => 'INT',
+                'SMALLINT' => 'SMALLINT',
+                'BIGINT' => 'BIGINT',
+                'TINYINT' => 'TINYINT',
+                'DECIMAL' => 'DECIMAL',
+                'NUMERIC' => 'NUMERIC',
+                'REAL' => 'REAL',
+                'DOUBLE' => 'FLOAT',
+                'FLOAT' => 'REAL',
+                'DATE' => 'DATE',
+                'TIME' => 'TIME',
+                'DATETIME' => 'DATETIME2',
+                'TIMESTAMP' => 'DATETIME2',
+                'YEAR' => 'INT',
+                'CHAR' => 'NCHAR',
+                'VARCHAR' => 'NVARCHAR',
+                'BINARY' => 'BINARY',
+                'VARBINARY' => 'VARBINARY',
+                'JSON' => 'NVARCHAR(MAX)',
+                'JSONB' => 'NVARCHAR(MAX)',
+                'UUID' => 'UNIQUEIDENTIFIER',
+            ],
         };
 
         // Check if we have a translation for this type
@@ -396,17 +467,33 @@ trait DdlOps
             return false;
         }
 
-        $sql = match ($driver) {
-            DatabaseDriver::MYSQL => "DROP DATABASE IF EXISTS {$databaseEscaped}",
-            DatabaseDriver::POSTGRES => "DROP DATABASE {$databaseEscaped}",
-            default => null,
-        };
+        // SQL Server: DROP DATABASE must be executed from master database context
+        // and doesn't support IF EXISTS (use sys.databases check instead)
+        if ($driver === DatabaseDriver::SQLSRV) {
+            $databaseUnquoted = str_replace(['[', ']'], '', $databaseEscaped);
+            $sql = "IF EXISTS (SELECT * FROM sys.databases WHERE name = N'{$databaseUnquoted}') DROP DATABASE {$databaseEscaped}";
+        } else {
+            $sql = match ($driver) {
+                DatabaseDriver::MYSQL => "DROP DATABASE IF EXISTS {$databaseEscaped}",
+                // PostgreSQL doesn't support IF EXISTS for DROP DATABASE
+                DatabaseDriver::POSTGRES => "DROP DATABASE {$databaseEscaped}",
+                default => null,
+            };
+        }
 
         if ($sql === null) {
             return false;
         }
 
-        return $this->execute($sql) !== false;
+        try {
+            return $this->execute($sql) !== false;
+        } catch (\PDOException $e) {
+            // PostgreSQL throws exception if database doesn't exist (expected behavior)
+            if ($driver === DatabaseDriver::POSTGRES && str_contains($e->getMessage(), 'does not exist')) {
+                return true; // Database doesn't exist, consider it success
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -418,9 +505,18 @@ trait DdlOps
      */
     protected function dropTable(string $table, bool $ifExists = true): bool
     {
+        $driver = $this->driver();
         $tableEscaped = $this->table($table);
-        $ifExistsClause = $ifExists ? ' IF EXISTS' : '';
-        $sql = "DROP TABLE{$ifExistsClause} {$tableEscaped}";
+
+        // SQL Server doesn't support IF EXISTS in DROP TABLE (use IF OBJECT_ID check instead)
+        if ($driver === DatabaseDriver::SQLSRV && $ifExists) {
+            // OBJECT_ID needs unquoted table name
+            $tableUnquoted = str_replace('"', '', $tableEscaped);
+            $sql = "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{$tableUnquoted}') AND type in (N'U')) DROP TABLE {$tableEscaped}";
+        } else {
+            $ifExistsClause = $ifExists ? ' IF EXISTS' : '';
+            $sql = "DROP TABLE{$ifExistsClause} {$tableEscaped}";
+        }
 
         return $this->execute($sql) !== false;
     }
@@ -555,6 +651,7 @@ trait DdlOps
         return match ($driver) {
             DatabaseDriver::MYSQL => "ALTER TABLE {$tableEscaped} MODIFY COLUMN {$columnEscaped} {$columnDef}",
             DatabaseDriver::POSTGRES => "ALTER TABLE {$tableEscaped} ALTER COLUMN {$columnEscaped} TYPE {$type}",
+            DatabaseDriver::SQLSRV => "ALTER TABLE {$tableEscaped} ALTER COLUMN {$columnEscaped} {$columnDef}",
             default => null,
         };
     }
@@ -647,9 +744,10 @@ trait DdlOps
         $tableEscaped = $this->table($table);
         $indexNameEscaped = $this->escape($indexName, EscapeMode::COLUMN_OR_TABLE);
 
-        // MySQL requires ON table, PostgreSQL and SQLite don't
+        // MySQL and SQL Server require ON table, PostgreSQL and SQLite don't
         $sql = match ($driver) {
             DatabaseDriver::MYSQL => "DROP INDEX {$indexNameEscaped} ON {$tableEscaped}",
+            DatabaseDriver::SQLSRV => "DROP INDEX {$indexNameEscaped} ON {$tableEscaped}",
             DatabaseDriver::POSTGRES, DatabaseDriver::SQLITE => "DROP INDEX {$indexNameEscaped}",
         };
 
@@ -698,6 +796,7 @@ trait DdlOps
         $sql = match ($driver) {
             DatabaseDriver::MYSQL => "ALTER TABLE {$tableEscaped} ADD CONSTRAINT {$constraintNameEscaped} FOREIGN KEY ({$columnEscaped}) REFERENCES {$referencedTableEscaped} ({$referencedColumnEscaped})",
             DatabaseDriver::POSTGRES => "ALTER TABLE {$tableEscaped} ADD CONSTRAINT {$constraintNameEscaped} FOREIGN KEY ({$columnEscaped}) REFERENCES {$referencedTableEscaped} ({$referencedColumnEscaped})",
+            DatabaseDriver::SQLSRV => "ALTER TABLE {$tableEscaped} ADD CONSTRAINT {$constraintNameEscaped} FOREIGN KEY ({$columnEscaped}) REFERENCES {$referencedTableEscaped} ({$referencedColumnEscaped})",
             DatabaseDriver::SQLITE => "CREATE INDEX IF NOT EXISTS {$constraintNameEscaped} ON {$tableEscaped} ({$columnEscaped})",
         };
 
