@@ -67,6 +67,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install unixodbc -y
 
+      - name: Install sqlcmd
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -99,8 +107,11 @@ jobs:
         run: |
           echo "Waiting for SQL Server..."
           for i in {1..60}; do
-            if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) \
-              /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong!Passw0rd' -Q "SELECT 1" >/dev/null 2>&1; then
+            if sqlcmd \
+              -S 127.0.0.1 \
+              -U sa \
+              -P 'YourStrong!Passw0rd' \
+              -Q "SELECT 1" >/dev/null 2>&1; then
               echo "SQL Server is ready"
               exit 0
             fi
@@ -113,10 +124,7 @@ jobs:
         run: |
           mysql -h 127.0.0.1 -u root -proot testdb < dumps/mysql.sql
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d testdb -f dumps/postgres.sql
-          # Initialize SQL Server schema
-          # The health check ensures SQL Server is ready, so we can directly run the initialization
-          # Use Docker to run sqlcmd and connect to the SQL Server service on localhost
-          docker run --rm --add-host=host.docker.internal:host-gateway -v ${{ github.workspace }}/dumps:/dumps mcr.microsoft.com/mssql/server:2022-latest bash -c "/opt/mssql-tools/bin/sqlcmd -S host.docker.internal -U sa -P 'YourStrong!Passw0rd' -i /dumps/sqlserver.sql"
+          /opt/mssql-tools/bin/sqlcmd -S 127.0.0.1 -U sa -P 'YourStrong!Passw0rd' -i dumps/sqlserver.sql
 
       - name: Run tests
         run: vendor/bin/phpunit --coverage-text
