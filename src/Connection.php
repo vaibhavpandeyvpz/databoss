@@ -234,6 +234,11 @@ class Connection implements ConnectionInterface
             'Database' => $options[self::OPT_DATABASE],
         ];
 
+        // Add TrustServerCertificate if explicitly set (useful for test environments with self-signed certificates)
+        if (isset($options['TrustServerCertificate']) && $options['TrustServerCertificate'] === 'yes') {
+            $parts['TrustServerCertificate'] = 'yes';
+        }
+
         // SQL Server PDO driver doesn't support CharacterSet in DSN
         // Character set is handled via connection options or SET statements if needed
 

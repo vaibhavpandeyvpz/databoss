@@ -513,6 +513,19 @@ $db = new Connection(
         ])
         ->toArray()
 );
+
+// For test environments with self-signed certificates (e.g., Docker containers)
+// ODBC Driver 18+ requires TrustServerCertificate to be enabled
+$testDb = new Connection(
+    (new SqlsrvOptions())
+        ->withHost('127.0.0.1')
+        ->withPort(1433)
+        ->withDatabase('testdb')
+        ->withUsername('sa')
+        ->withPassword('YourStrong!Passw0rd')
+        ->withTrustServerCertificate() // Enable for test environments
+        ->toArray()
+);
 ```
 
 ## Filter Syntax Reference

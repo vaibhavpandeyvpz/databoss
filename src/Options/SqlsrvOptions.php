@@ -146,6 +146,23 @@ class SqlsrvOptions
     }
 
     /**
+     * Enable trust server certificate (useful for test environments with self-signed certificates).
+     *
+     * @param  bool  $trust  Whether to trust the server certificate (default: true)
+     * @return self Returns self for method chaining
+     */
+    public function withTrustServerCertificate(bool $trust = true): self
+    {
+        if ($trust) {
+            $this->options['TrustServerCertificate'] = 'yes';
+        } else {
+            unset($this->options['TrustServerCertificate']);
+        }
+
+        return $this;
+    }
+
+    /**
      * Convert the builder to an options array.
      *
      * @return array<string, mixed> The connection options array

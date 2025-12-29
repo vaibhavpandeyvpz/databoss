@@ -880,15 +880,16 @@ class ConnectionTest extends TestCase
                 Connection::OPT_USERNAME => 'postgres',
                 Connection::OPT_PASSWORD => 'postgres',
             ])],
-            // SQL Server (only if driver is available)
-            ...(in_array('sqlsrv', \PDO::getAvailableDrivers(), true) ? [[new Connection([
+            // SQL Server
+            [new Connection([
                 Connection::OPT_DRIVER => DatabaseDriver::SQLSRV->value,
                 Connection::OPT_HOST => '127.0.0.1',
                 Connection::OPT_PORT => 1433,
                 Connection::OPT_DATABASE => 'testdb',
                 Connection::OPT_USERNAME => 'sa',
                 Connection::OPT_PASSWORD => 'YourStrong!Passw0rd',
-            ])]] : []),
+                'TrustServerCertificate' => 'yes', // Required for ODBC Driver 18+ with self-signed certificates in test environments
+            ])],
         ];
 
         // SQLite (file-based database)
