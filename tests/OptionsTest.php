@@ -37,14 +37,14 @@ class OptionsTest extends TestCase
             ->withPrefix('app_')
             ->toArray();
 
-        $this->assertEquals(DatabaseDriver::MYSQL->value, $options[ConnectionAbstract::OPT_DRIVER]);
-        $this->assertEquals('127.0.0.1', $options[ConnectionAbstract::OPT_HOST]);
-        $this->assertEquals(3306, $options[ConnectionAbstract::OPT_PORT]);
-        $this->assertEquals('testdb', $options[ConnectionAbstract::OPT_DATABASE]);
-        $this->assertEquals('root', $options[ConnectionAbstract::OPT_USERNAME]);
-        $this->assertEquals('password', $options[ConnectionAbstract::OPT_PASSWORD]);
-        $this->assertEquals('utf8mb4', $options[ConnectionAbstract::OPT_CHARSET]);
-        $this->assertEquals('app_', $options[ConnectionAbstract::OPT_PREFIX]);
+        $this->assertEquals(DatabaseDriver::MYSQL->value, $options[Connection::OPT_DRIVER]);
+        $this->assertEquals('127.0.0.1', $options[Connection::OPT_HOST]);
+        $this->assertEquals(3306, $options[Connection::OPT_PORT]);
+        $this->assertEquals('testdb', $options[Connection::OPT_DATABASE]);
+        $this->assertEquals('root', $options[Connection::OPT_USERNAME]);
+        $this->assertEquals('password', $options[Connection::OPT_PASSWORD]);
+        $this->assertEquals('utf8mb4', $options[Connection::OPT_CHARSET]);
+        $this->assertEquals('app_', $options[Connection::OPT_PREFIX]);
     }
 
     public function test_postgres_options_builder(): void
@@ -59,14 +59,14 @@ class OptionsTest extends TestCase
             ->withPrefix('app_')
             ->toArray();
 
-        $this->assertEquals(DatabaseDriver::POSTGRES->value, $options[ConnectionAbstract::OPT_DRIVER]);
-        $this->assertEquals('127.0.0.1', $options[ConnectionAbstract::OPT_HOST]);
-        $this->assertEquals(5432, $options[ConnectionAbstract::OPT_PORT]);
-        $this->assertEquals('testdb', $options[ConnectionAbstract::OPT_DATABASE]);
-        $this->assertEquals('postgres', $options[ConnectionAbstract::OPT_USERNAME]);
-        $this->assertEquals('postgres', $options[ConnectionAbstract::OPT_PASSWORD]);
-        $this->assertEquals('utf8', $options[ConnectionAbstract::OPT_CHARSET]);
-        $this->assertEquals('app_', $options[ConnectionAbstract::OPT_PREFIX]);
+        $this->assertEquals(DatabaseDriver::POSTGRES->value, $options[Connection::OPT_DRIVER]);
+        $this->assertEquals('127.0.0.1', $options[Connection::OPT_HOST]);
+        $this->assertEquals(5432, $options[Connection::OPT_PORT]);
+        $this->assertEquals('testdb', $options[Connection::OPT_DATABASE]);
+        $this->assertEquals('postgres', $options[Connection::OPT_USERNAME]);
+        $this->assertEquals('postgres', $options[Connection::OPT_PASSWORD]);
+        $this->assertEquals('utf8', $options[Connection::OPT_CHARSET]);
+        $this->assertEquals('app_', $options[Connection::OPT_PREFIX]);
     }
 
     public function test_sqlite_options_builder(): void
@@ -76,9 +76,9 @@ class OptionsTest extends TestCase
             ->withPrefix('app_')
             ->toArray();
 
-        $this->assertEquals(DatabaseDriver::SQLITE->value, $options[ConnectionAbstract::OPT_DRIVER]);
-        $this->assertEquals('/tmp/test.db', $options[ConnectionAbstract::OPT_DATABASE]);
-        $this->assertEquals('app_', $options[ConnectionAbstract::OPT_PREFIX]);
+        $this->assertEquals(DatabaseDriver::SQLITE->value, $options[Connection::OPT_DRIVER]);
+        $this->assertEquals('/tmp/test.db', $options[Connection::OPT_DATABASE]);
+        $this->assertEquals('app_', $options[Connection::OPT_PREFIX]);
     }
 
     public function test_sqlite_options_in_memory(): void
@@ -86,8 +86,8 @@ class OptionsTest extends TestCase
         $options = (new SqliteOptions)
             ->toArray();
 
-        $this->assertEquals(DatabaseDriver::SQLITE->value, $options[ConnectionAbstract::OPT_DRIVER]);
-        $this->assertEquals(':memory:', $options[ConnectionAbstract::OPT_DATABASE]);
+        $this->assertEquals(DatabaseDriver::SQLITE->value, $options[Connection::OPT_DRIVER]);
+        $this->assertEquals(':memory:', $options[Connection::OPT_DATABASE]);
     }
 
     public function test_mysql_options_with_connection(): void
@@ -123,6 +123,6 @@ class OptionsTest extends TestCase
             ->withPdoOptions($pdoOptions)
             ->toArray();
 
-        $this->assertEquals($pdoOptions, $options[ConnectionAbstract::OPT_OPTIONS]);
+        $this->assertEquals($pdoOptions, $options[Connection::OPT_OPTIONS]);
     }
 }

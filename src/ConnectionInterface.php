@@ -88,11 +88,13 @@ interface ConnectionInterface
     public function execute(string $sql, ?array $params = null): int|false;
 
     /**
-     * Check if records exist matching the filter.
+     * Check if a table exists or if records exist matching the filter.
      *
      * @param  string  $table  The table name
      * @param  array<string, mixed>  $filter  Filter conditions (default: empty array)
-     * @return bool True if at least one record exists, false otherwise
+     *                                        - If empty array: checks if the table exists
+     *                                        - If non-empty: checks if records exist matching the filter
+     * @return bool True if table exists (when filter is empty) or if records exist (when filter is provided), false otherwise
      */
     public function exists(string $table, array $filter = []): bool;
 
@@ -151,6 +153,20 @@ interface ConnectionInterface
     public function min(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false;
 
     /**
+     * Execute a mathematical aggregation function (AVG, COUNT, MAX, MIN, SUM).
+     *
+     * @param  string  $table  The table name
+     * @param  string  $operation  The SQL operation (AVG, COUNT, MAX, MIN, SUM)
+     * @param  string  $column  The column name (default: '*' for COUNT)
+     * @param  array<string, mixed>  $filter  Filter conditions (default: empty array)
+     * @param  array<string, string>  $sort  Sort order (default: empty array)
+     * @param  int  $start  Starting offset (default: 0)
+     * @param  int  $max  Maximum number of records (default: 0 = all)
+     * @return int|false The result as integer, or false on failure
+     */
+    public function math(string $table, string $operation, string $column = '*', array $filter = [], array $sort = [], int $start = 0, int $max = 0): int|false;
+
+    /**
      * Get the underlying PDO instance.
      *
      * @return \PDO The PDO connection instance
@@ -204,4 +220,79 @@ interface ConnectionInterface
      * @return int|false The number of updated rows, or false on failure
      */
     public function update(string $table, array $values, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false;
+
+    /**
+     * Create a database or table.
+     * - create() - Create the current database
+     * - create(string $table, array $columns, ?array $primaryKey = null) - Create a table
+     *
+     * @param  string|null  $table  Table name (null = create database)
+     * @param  array<string, array<string, mixed>>|null  $columns  Column definitions (required for table creation)
+     * @param  array<string>|null  $primaryKey  Primary key column(s) (optional for table creation)
+     * @return bool True on success, false on failure
+     */
+    public function create(?string $table = null, ?array $columns = null, ?array $primaryKey = null): bool;
+
+    /**
+     * Drop a database, table, or column.
+     * - drop() - Drop the current database
+     * - drop(string $table) - Drop a table
+     * - drop(string $table, string $column) - Drop a column
+     *
+     * @param  string|null  $table  Table name (null = drop database)
+     * @param  string|null  $column  Column name (null = drop table/database)
+     * @return bool True on success, false on failure
+     */
+    public function drop(?string $table = null, ?string $column = null): bool;
+
+    /**
+     * Modify/update a column in a table.
+     *
+     * @param  string  $table  The table name
+     * @param  string  $column  The column name
+     * @param  array<string, mixed>  $definition  Column definition
+     * @return bool True on success, false on failure (SQLite doesn't support this operation)
+     */
+    public function modify(string $table, string $column, array $definition): bool;
+
+    /**
+     * Create an index on a table.
+     *
+     * @param  string  $table  The table name
+     * @param  string|array<string>  $columns  Column name(s) to index
+     * @param  string|null  $indexName  Optional index name (default: null, will be auto-generated)
+     * @return bool True on success, false on failure
+     */
+    public function index(string $table, string|array $columns, ?string $indexName = null): bool;
+
+    /**
+     * Create a unique index on a table.
+     *
+     * @param  string  $table  The table name
+     * @param  string|array<string>  $columns  Column name(s) to index
+     * @param  string|null  $indexName  Optional index name (default: null, will be auto-generated)
+     * @return bool True on success, false on failure
+     */
+    public function unique(string $table, string|array $columns, ?string $indexName = null): bool;
+
+    /**
+     * Create a foreign key constraint.
+     *
+     * @param  string  $table  The table name
+     * @param  string  $column  The column name in the current table
+     * @param  array{0: string, 1: string}  $references  Array with [referenced_table, referenced_column]
+     * @param  string|null  $constraintName  Optional constraint name (default: null, will be auto-generated)
+     * @return bool True on success, false on failure
+     */
+    public function foreign(string $table, string $column, array $references, ?string $constraintName = null): bool;
+
+    /**
+     * Drop an index from a table.
+     * Can drop by index name or by columns (will auto-generate name).
+     *
+     * @param  string  $table  The table name
+     * @param  string|array<string>  $identifier  Index name or array of column names
+     * @return bool True on success, false on failure
+     */
+    public function unindex(string $table, string|array $identifier): bool;
 }

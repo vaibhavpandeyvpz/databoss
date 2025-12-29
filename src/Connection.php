@@ -13,227 +13,517 @@ declare(strict_types=1);
 
 namespace Databoss;
 
+use Databoss\Traits\DdlOps;
+use Databoss\Traits\HighLevelOps;
+
 /**
  * Class Connection
  *
- * Concrete implementation of database connection.
- * Provides CRUD operations and aggregation methods for database interactions.
+ * Main database connection class providing low-level operations.
+ * High-level operations and DDL operations are provided via traits.
  */
-class Connection extends ConnectionAbstract
+class Connection implements ConnectionInterface
 {
-    /**
-     * {@inheritdoc}
-     */
-    public function average(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false
-    {
-        return $this->math($table, 'AVG', $column, $filter, $sort, $start, $max);
-    }
+    use DdlOps;
+    use HighLevelOps;
+
+    /** Option key for database charset */
+    public const OPT_CHARSET = 'charset';
+
+    /** Option key for database name */
+    public const OPT_DATABASE = 'database';
+
+    /** Option key for database driver */
+    public const OPT_DRIVER = 'driver';
+
+    /** Option key for database host */
+    public const OPT_HOST = 'host';
+
+    /** Option key for PDO options */
+    public const OPT_OPTIONS = 'options';
+
+    /** Option key for database password */
+    public const OPT_PASSWORD = 'password';
+
+    /** Option key for database port */
+    public const OPT_PORT = 'port';
+
+    /** Option key for table prefix */
+    public const OPT_PREFIX = 'prefix';
+
+    /** Option key for database username */
+    public const OPT_USERNAME = 'username';
+
+    /** Regular expression for matching alias patterns (e.g., "column{alias}") */
+    private const REGEX_ALIAS = '~(?<name>[a-zA-Z0-9_]+){(?<alias>[a-zA-Z0-9_]+)}~';
+
+    /** Regular expression for matching table.column patterns */
+    private const REGEX_COLUMN_WITH_TABLE = '~(?<table>[a-zA-Z0-9_]+)\.(?<column>[a-zA-Z0-9_]+)~';
+
+    /** Regular expression for matching filter conditions with operators (e.g., "column{>}") */
+    private const REGEX_WHERE_CONDITION = '~(?<column>[a-zA-Z0-9_]+){(?<operator>[!\~=<>]{1,2}+)}~';
 
     /**
-     * {@inheritdoc}
-     */
-    public function count(string $table, string $column = '*', array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false
-    {
-        return $this->math($table, 'COUNT', $column, $filter, $sort, $start, $max);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function delete(string $table, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false
-    {
-        $driver = $this->getDriver();
-        $tableEscaped = $this->table($table);
-
-        // MySQL supports ORDER BY/LIMIT in DELETE natively
-        // PostgreSQL and SQLite require a subquery approach
-        if (($driver === DatabaseDriver::POSTGRES || $driver === DatabaseDriver::SQLITE) && ($sort !== [] || $max > 0)) {
-            return $this->deleteWithSubquery($tableEscaped, $table, $filter, $sort, $max, $start);
-        }
-
-        // Native MySQL approach
-        $sql = "DELETE FROM {$tableEscaped}";
-        $where = $this->where($filter, $sort, $max, $start, false);
-        if ($where['sql'] !== '') {
-            $sql .= $where['sql'];
-        }
-
-        return $this->execute($sql, $where['params']);
-    }
-
-    /**
-     * Delete records using subquery approach (for PostgreSQL/SQLite).
+     * Connection options array.
      *
-     * @param  string  $tableEscaped  Escaped table name
-     * @param  string  $table  Original table name
-     * @param  array<string, mixed>  $filter  Filter conditions
-     * @param  array<string, string>  $sort  Sort order
-     * @param  int  $max  Maximum number of records
-     * @param  int  $start  Starting offset
-     * @return int|false Number of deleted rows or false on failure
+     * @var array<string, mixed>
      */
-    private function deleteWithSubquery(string $tableEscaped, string $table, array $filter, array $sort, int $max, int $start): int|false
-    {
-        $subquery = $this->buildIdSubquery($table, 'id', $filter, $sort, $max, $start);
-        $idColumnEscaped = $this->escape('id', EscapeMode::COLUMN_OR_TABLE);
-        $sql = "DELETE FROM {$tableEscaped} WHERE {$idColumnEscaped} IN ({$subquery['sql']})";
+    protected readonly array $options;
 
-        return $this->execute($sql, $subquery['params']);
+    /**
+     * PDO connection instance.
+     *
+     * @var \PDO The PDO connection object
+     */
+    protected readonly \PDO $pdo;
+
+    /**
+     * Get the current database driver.
+     *
+     * @return DatabaseDriver The database driver enum
+     */
+    protected function driver(): DatabaseDriver
+    {
+        return DatabaseDriver::tryFrom($this->options[self::OPT_DRIVER] ?? '') ?? DatabaseDriver::MYSQL;
+    }
+
+    /**
+     * Constructor.
+     *
+     * Initializes the database connection with the provided options.
+     * Validates required options and establishes PDO connection.
+     *
+     * @param  array<string, mixed>  $options  Connection options
+     *
+     * @throws \InvalidArgumentException If required options are missing or empty
+     * @throws \UnexpectedValueException If an unsupported driver is specified
+     * @throws \PDOException If database connection fails
+     */
+    public function __construct(array $options)
+    {
+        $defaults = [
+            self::OPT_CHARSET => 'utf8',
+            self::OPT_DRIVER => DatabaseDriver::MYSQL->value,
+            self::OPT_HOST => 'localhost',
+            self::OPT_OPTIONS => [
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_OBJ,
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            ],
+            self::OPT_PASSWORD => null,
+            self::OPT_PREFIX => null,
+        ];
+
+        $options = array_merge($defaults, $options);
+        $this->options = $options;
+
+        // Validate and get driver
+        $driver = DatabaseDriver::tryFrom($options[self::OPT_DRIVER] ?? '')
+            ?? throw new \UnexpectedValueException(sprintf(
+                "Unsupported driver '%s' provided, '%s', '%s' or '%s' expected",
+                $options[self::OPT_DRIVER] ?? 'null',
+                DatabaseDriver::MYSQL->value,
+                DatabaseDriver::POSTGRES->value,
+                DatabaseDriver::SQLITE->value
+            ));
+
+        // SQLite doesn't require database, username, or password
+        if ($driver !== DatabaseDriver::SQLITE) {
+            $required = [self::OPT_DATABASE, self::OPT_USERNAME];
+            foreach ($required as $option) {
+                if (empty($options[$option])) {
+                    throw new \InvalidArgumentException("Option '{$option}' is required and should not be empty.");
+                }
+            }
+        }
+
+        $commands = [];
+
+        if ($driver !== DatabaseDriver::SQLITE) {
+            $commands[] = sprintf("SET NAMES '%s'", $options[self::OPT_CHARSET]);
+        }
+
+        $dsn = match ($driver) {
+            DatabaseDriver::MYSQL => $this->buildMysqlDsn($options),
+            DatabaseDriver::POSTGRES => $this->buildPostgresDsn($options),
+            DatabaseDriver::SQLITE => $this->buildSqliteDsn($options),
+        };
+
+        if ($driver === DatabaseDriver::MYSQL) {
+            $commands[] = 'SET SQL_MODE=ANSI_QUOTES';
+        }
+
+        $this->pdo = new \PDO(
+            $dsn,
+            $driver === DatabaseDriver::SQLITE ? null : $options[self::OPT_USERNAME],
+            $driver === DatabaseDriver::SQLITE ? null : ($options[self::OPT_PASSWORD] ?? null),
+            $options[self::OPT_OPTIONS]
+        );
+
+        foreach ($commands as $command) {
+            $this->execute($command);
+        }
+    }
+
+    /**
+     * Build MySQL DSN string.
+     *
+     * @param  array<string, mixed>  $options  Connection options
+     * @return string The MySQL DSN string
+     */
+    private function buildMysqlDsn(array $options): string
+    {
+        return $this->buildDsn('mysql', $options);
+    }
+
+    /**
+     * Build PostgreSQL DSN string.
+     *
+     * @param  array<string, mixed>  $options  Connection options
+     * @return string The PostgreSQL DSN string
+     */
+    private function buildPostgresDsn(array $options): string
+    {
+        return $this->buildDsn('pgsql', $options);
+    }
+
+    /**
+     * Build DSN string for MySQL/PostgreSQL.
+     *
+     * @param  string  $driver  DSN driver prefix ('mysql' or 'pgsql')
+     * @param  array<string, mixed>  $options  Connection options
+     * @return string The DSN string
+     */
+    private function buildDsn(string $driver, array $options): string
+    {
+        $port = isset($options[self::OPT_PORT]) ? sprintf(';port=%d', $options[self::OPT_PORT]) : '';
+
+        return sprintf(
+            '%s:host=%s%s;dbname=%s',
+            $driver,
+            $options[self::OPT_HOST],
+            $port,
+            $options[self::OPT_DATABASE]
+        );
+    }
+
+    /**
+     * Build SQLite DSN string.
+     *
+     * @param  array<string, mixed>  $options  Connection options
+     * @return string The SQLite DSN string
+     */
+    private function buildSqliteDsn(array $options): string
+    {
+        $database = $options[self::OPT_DATABASE] ?? ':memory:';
+
+        return "sqlite:{$database}";
     }
 
     /**
      * {@inheritdoc}
      */
-    public function exists(string $table, array $filter = []): bool
+    public function batch(callable $callback): mixed
     {
-        $count = $this->count($table, '*', $filter);
+        $begun = $this->pdo->beginTransaction();
+        try {
+            $result = $callback($this);
+            if ($begun) {
+                $this->pdo->commit();
+            }
 
-        return $count !== false && $count > 0;
+            return $result;
+        } catch (\Throwable $e) {
+            if ($begun) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
      * {@inheritdoc}
      */
-    public function first(string $table, array $filter = [], array $sort = [], int $start = 0): object|array|false
+    public function escape(string $value, EscapeMode $mode = EscapeMode::VALUE): string|false
     {
-        $result = $this->select($table, '*', $filter, $sort, 1, $start);
-        if ($result !== false && $result !== []) {
-            return $result[0];
+        return match ($mode) {
+            EscapeMode::ALIAS => $this->escapeAlias($value),
+            EscapeMode::COLUMN_WITH_TABLE => $this->escapeColumnWithTable($value),
+            EscapeMode::COLUMN_OR_TABLE => sprintf('"%s"', $value),
+            EscapeMode::VALUE => $this->pdo->quote($value),
+        };
+    }
+
+    /**
+     * Escape a value as an alias (e.g., "column{alias}").
+     *
+     * @param  string  $value  The value to escape
+     * @return string|false The escaped alias string, or false on failure
+     */
+    private function escapeAlias(string $value): string|false
+    {
+        if (preg_match(self::REGEX_ALIAS, $value, $matches)) {
+            return sprintf('"%s" AS "%s"', $matches['name'], $matches['alias']);
+        }
+
+        return sprintf('"%s"', $value);
+    }
+
+    /**
+     * Escape a value as table.column format.
+     *
+     * @param  string  $value  The value to escape (e.g., "table.column")
+     * @return string|false The escaped string, or false on failure
+     */
+    private function escapeColumnWithTable(string $value): string|false
+    {
+        if (preg_match(self::REGEX_COLUMN_WITH_TABLE, $value, $matches)) {
+            return sprintf('"%s"."%s"', $matches['table'], $matches['column']);
+        }
+
+        return sprintf('"%s"', $value);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function execute(string $sql, ?array $params = null): int|false
+    {
+        $stmt = $this->pdo->prepare($sql);
+        if ($stmt->execute($params)) {
+            return $stmt->rowCount();
         }
 
         return false;
     }
 
     /**
-     * {@inheritdoc}
-     */
-    public function insert(string $table, array $values): int|false
-    {
-        $table = $this->table($table);
-        $columns = array_keys($values);
-        foreach ($columns as $i => $column) {
-            $columns[$i] = $this->escape($column, EscapeMode::COLUMN_WITH_TABLE);
-        }
-        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
-        $columns = implode(', ', $columns);
-
-        return $this->execute("INSERT INTO {$table} ({$columns}) VALUES ({$placeholders})", array_values($values));
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function max(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false
-    {
-        return $this->math($table, 'MAX', $column, $filter, $sort, $start, $max);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function min(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false
-    {
-        return $this->math($table, 'MIN', $column, $filter, $sort, $start, $max);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function select(string $table, array|string|null $columns = null, array $filter = [], array $sort = [], int $max = 0, int $start = 0): array|false
-    {
-        $table = $this->table($table, true);
-
-        $selection = match (true) {
-            is_array($columns) => $this->buildArraySelection($columns),
-            is_string($columns) => $columns === '*' ? $columns : sprintf('"%s"', $columns),
-            default => '*',
-        };
-
-        $sql = "SELECT {$selection} FROM {$table}";
-        $where = $this->where($filter, $sort, $max, $start);
-        if ($where['sql'] !== '') {
-            $sql .= $where['sql'];
-        }
-
-        return $this->query($sql, $where['params']);
-    }
-
-    /**
-     * Build column selection string from array of column names.
+     * Build WHERE clause from filter array.
      *
-     * @param  array<string>  $columns  Array of column names (may include aliases)
-     * @return string Comma-separated list of escaped columns
-     */
-    private function buildArraySelection(array $columns): string
-    {
-        $selection = [];
-        foreach ($columns as $column) {
-            $selection[] = $this->escape($column, EscapeMode::ALIAS);
-        }
-
-        return implode(', ', $selection);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function sum(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false
-    {
-        return $this->math($table, 'SUM', $column, $filter, $sort, $start, $max);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function update(string $table, array $values, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false
-    {
-        $driver = $this->getDriver();
-        $tableEscaped = $this->table($table);
-
-        $columns = array_keys($values);
-        foreach ($columns as $i => $column) {
-            $columns[$i] = $this->escape($column, EscapeMode::COLUMN_WITH_TABLE).' = ?';
-        }
-        $columns = implode(', ', $columns);
-        $params = array_values($values);
-
-        // MySQL supports ORDER BY/LIMIT in UPDATE natively
-        // PostgreSQL and SQLite require a subquery approach
-        if (($driver === DatabaseDriver::POSTGRES || $driver === DatabaseDriver::SQLITE) && ($sort !== [] || $max > 0)) {
-            return $this->updateWithSubquery($tableEscaped, $table, $columns, $params, $filter, $sort, $max, $start);
-        }
-
-        // Native MySQL approach
-        $sql = "UPDATE {$tableEscaped} SET {$columns}";
-        $where = $this->where($filter, $sort, $max, $start, false);
-        if ($where['sql'] !== '') {
-            $sql .= $where['sql'];
-            $params = array_merge($params, $where['params']);
-        }
-
-        return $this->execute($sql, $params);
-    }
-
-    /**
-     * Update records using subquery approach (for PostgreSQL/SQLite).
+     * Converts filter array to SQL WHERE conditions with proper escaping.
+     * Supports nested AND/OR conditions, comparison operators, and array values.
      *
-     * @param  string  $tableEscaped  Escaped table name
-     * @param  string  $table  Original table name
-     * @param  string  $columns  SET clause columns
-     * @param  array<int, mixed>  $params  Update parameters
      * @param  array<string, mixed>  $filter  Filter conditions
-     * @param  array<string, string>  $sort  Sort order
-     * @param  int  $max  Maximum number of records
-     * @param  int  $start  Starting offset
-     * @return int|false Number of updated rows or false on failure
+     * @param  string  $condition  Logical condition ('AND' or 'OR', default: 'AND')
+     * @return array{sql: string, params: array<int, mixed>} Array with 'sql' and 'params' keys
      */
-    private function updateWithSubquery(string $tableEscaped, string $table, string $columns, array $params, array $filter, array $sort, int $max, int $start): int|false
+    protected function filter(array $filter, string $condition = 'AND'): array
     {
-        $subquery = $this->buildIdSubquery($table, 'id', $filter, $sort, $max, $start);
-        $idColumnEscaped = $this->escape('id', EscapeMode::COLUMN_OR_TABLE);
-        $sql = "UPDATE {$tableEscaped} SET {$columns} WHERE {$idColumnEscaped} IN ({$subquery['sql']})";
-        $params = array_merge($params, $subquery['params']);
+        $sql = [];
+        $params = [];
 
-        return $this->execute($sql, $params);
+        foreach ($filter as $key => $value) {
+            if ($key === 'AND' || $key === 'OR') {
+                $nested = $this->filter($value, $key);
+                if ($nested['sql'] !== '') {
+                    $sql[] = "({$nested['sql']})";
+                    $params = [...$params, ...$nested['params']];
+                }
+
+                continue;
+            }
+
+            [$column, $operator] = $this->parseFilterKey($key);
+            $operator = $this->normalizeOperator($operator, $value);
+
+            $clause = $this->escape($column, EscapeMode::COLUMN_WITH_TABLE).' '.$operator;
+
+            if ($value === null) {
+                $clause .= ' NULL';
+            } elseif (is_array($value)) {
+                if ($value === []) {
+                    // Empty array for IN/NOT IN - invalid SQL, so use always-false condition
+                    $clause = '1 = 0';
+                } else {
+                    $values = [];
+                    foreach ($value as $item) {
+                        if ($item === null) {
+                            // NULL values in arrays are skipped (use IS NULL separately)
+                            continue;
+                        }
+                        $escaped = is_int($item) || is_float($item) ? (string) $item : $this->escape((string) $item);
+                        if ($escaped !== false) {
+                            $values[] = $escaped;
+                        }
+                    }
+                    if ($values === []) {
+                        // All values were NULL or invalid - use always-false condition
+                        $clause = '1 = 0';
+                    } else {
+                        $clause .= ' ('.implode(',', $values).')';
+                    }
+                }
+            } else {
+                $clause .= ' ?';
+                $params[] = is_bool($value) ? ($value ? '1' : '0') : $value;
+            }
+
+            $sql[] = $clause;
+        }
+
+        return [
+            'sql' => trim(implode(" {$condition} ", $sql)),
+            'params' => $params,
+        ];
+    }
+
+    /**
+     * Parse filter key to extract column name and operator.
+     *
+     * @param  string  $key  The filter key (e.g., "column{>}" or "column")
+     * @return array{0: string, 1: string} Array with [column, operator]
+     */
+    private function parseFilterKey(string $key): array
+    {
+        if (preg_match(self::REGEX_WHERE_CONDITION, $key, $matches)) {
+            return [$matches['column'], $matches['operator']];
+        }
+
+        return [$key, '='];
+    }
+
+    /**
+     * Normalize operator based on value type.
+     *
+     * Converts operators like '!' to appropriate SQL operators based on value type.
+     *
+     * @param  string  $operator  The operator from filter key
+     * @param  mixed  $value  The filter value
+     * @return string The normalized SQL operator
+     */
+    private function normalizeOperator(string $operator, mixed $value): string
+    {
+        return match ($operator) {
+            '!', '!=' => match (true) {
+                $value === null => 'IS NOT',
+                is_array($value) => 'NOT IN',
+                default => '!=',
+            },
+            '>', '>=', '<', '<=' => $operator,
+            '~' => 'LIKE',
+            '!~' => 'NOT LIKE',
+            default => match (true) {
+                $value === null => 'IS',
+                is_array($value) => 'IN',
+                default => '=',
+            },
+        };
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function id(?string $sequence = null): string|false
+    {
+        return $this->pdo->lastInsertId($sequence);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function pdo(): \PDO
+    {
+        return $this->pdo;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function query(string $sql, array $params = []): array|false
+    {
+        $stmt = $this->pdo->prepare($sql);
+        if ($stmt->execute($params)) {
+            return $stmt->fetchAll();
+        }
+
+        return false;
+    }
+
+    /**
+     * Escape and format table name with optional prefix.
+     *
+     * @param  string  $table  The table name
+     * @param  bool  $alias  Whether to parse table aliases (default: false)
+     * @return string The escaped table name
+     */
+    protected function table(string $table, bool $alias = false): string
+    {
+        if ($this->options[self::OPT_PREFIX] !== null) {
+            $table = $this->options[self::OPT_PREFIX].$table;
+        }
+
+        return $this->escape($table, $alias ? EscapeMode::ALIAS : EscapeMode::COLUMN_OR_TABLE);
+    }
+
+    /**
+     * Build ORDER BY clause from sort array.
+     *
+     * @param  array<string, string>  $sort  Sort order (column => 'ASC'|'DESC')
+     * @return string The ORDER BY clause (empty string if no sort)
+     */
+    protected function buildOrderBy(array $sort): string
+    {
+        if ($sort === []) {
+            return '';
+        }
+
+        $order = [];
+        foreach ($sort as $column => $dir) {
+            $order[] = $this->escape($column, EscapeMode::COLUMN_WITH_TABLE).' '.strtoupper($dir);
+        }
+
+        return ' ORDER BY '.implode(', ', $order);
+    }
+
+    /**
+     * Build LIMIT/OFFSET clause based on driver.
+     *
+     * @param  int  $max  Maximum number of records (0 = no limit)
+     * @param  int  $start  Starting offset (default: 0)
+     * @return string The LIMIT clause (empty string if max is 0)
+     */
+    protected function buildLimit(int $max, int $start = 0): string
+    {
+        if ($max <= 0) {
+            return '';
+        }
+
+        $driver = $this->driver();
+
+        return match ($driver) {
+            DatabaseDriver::POSTGRES, DatabaseDriver::SQLITE => " LIMIT {$max} OFFSET {$start}",
+            DatabaseDriver::MYSQL => $start > 0 ? " LIMIT {$start}, {$max}" : " LIMIT {$max}",
+        };
+    }
+
+    /**
+     * Build WHERE clause with filtering, sorting, and pagination.
+     *
+     * @param  array<string, mixed>  $filter  Filter conditions
+     * @param  array<string, string>  $sort  Sort order (column => 'ASC'|'DESC')
+     * @param  int  $max  Maximum number of records (0 = no limit)
+     * @param  int  $start  Starting offset (default: 0)
+     * @param  bool  $allowOrderBy  Whether to include ORDER BY clause (default: true)
+     * @return array{sql: string, params: array<int, mixed>} Array with 'sql' and 'params' keys
+     */
+    protected function where(array $filter, array $sort, int $max = 0, int $start = 0, bool $allowOrderBy = true): array
+    {
+        $where = $this->filter($filter);
+        if (trim($where['sql']) !== '') {
+            $where['sql'] = " WHERE {$where['sql']}";
+        }
+
+        $driver = $this->driver();
+
+        // For SELECT queries (allowOrderBy=true), always apply ORDER BY and LIMIT
+        // For UPDATE/DELETE (allowOrderBy=false), only MySQL supports ORDER BY/LIMIT natively
+        if ($sort !== [] && ($allowOrderBy || $driver === DatabaseDriver::MYSQL)) {
+            $where['sql'] .= $this->buildOrderBy($sort);
+        }
+
+        if ($max > 0 && ($allowOrderBy || $driver === DatabaseDriver::MYSQL)) {
+            $where['sql'] .= $this->buildLimit($max, $start);
+        }
+
+        return $where;
     }
 }

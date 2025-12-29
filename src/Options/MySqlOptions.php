@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Databoss\Options;
 
-use Databoss\ConnectionAbstract;
+use Databoss\Connection;
 use Databoss\DatabaseDriver;
 
 /**
@@ -34,9 +34,9 @@ class MySqlOptions
     public function __construct()
     {
         $this->options = [
-            ConnectionAbstract::OPT_DRIVER => DatabaseDriver::MYSQL->value,
-            ConnectionAbstract::OPT_HOST => 'localhost',
-            ConnectionAbstract::OPT_CHARSET => 'utf8',
+            Connection::OPT_DRIVER => DatabaseDriver::MYSQL->value,
+            Connection::OPT_HOST => 'localhost',
+            Connection::OPT_CHARSET => 'utf8',
         ];
     }
 
@@ -48,7 +48,7 @@ class MySqlOptions
      */
     public function withHost(string $host): self
     {
-        $this->options[ConnectionAbstract::OPT_HOST] = $host;
+        $this->options[Connection::OPT_HOST] = $host;
 
         return $this;
     }
@@ -61,7 +61,7 @@ class MySqlOptions
      */
     public function withPort(int $port): self
     {
-        $this->options[ConnectionAbstract::OPT_PORT] = $port;
+        $this->options[Connection::OPT_PORT] = $port;
 
         return $this;
     }
@@ -74,7 +74,7 @@ class MySqlOptions
      */
     public function withDatabase(string $database): self
     {
-        $this->options[ConnectionAbstract::OPT_DATABASE] = $database;
+        $this->options[Connection::OPT_DATABASE] = $database;
 
         return $this;
     }
@@ -87,7 +87,7 @@ class MySqlOptions
      */
     public function withUsername(string $username): self
     {
-        $this->options[ConnectionAbstract::OPT_USERNAME] = $username;
+        $this->options[Connection::OPT_USERNAME] = $username;
 
         return $this;
     }
@@ -100,7 +100,7 @@ class MySqlOptions
      */
     public function withPassword(?string $password): self
     {
-        $this->options[ConnectionAbstract::OPT_PASSWORD] = $password;
+        $this->options[Connection::OPT_PASSWORD] = $password;
 
         return $this;
     }
@@ -113,7 +113,7 @@ class MySqlOptions
      */
     public function withCharset(string $charset): self
     {
-        $this->options[ConnectionAbstract::OPT_CHARSET] = $charset;
+        $this->options[Connection::OPT_CHARSET] = $charset;
 
         return $this;
     }
@@ -126,7 +126,7 @@ class MySqlOptions
      */
     public function withPrefix(?string $prefix): self
     {
-        $this->options[ConnectionAbstract::OPT_PREFIX] = $prefix;
+        $this->options[Connection::OPT_PREFIX] = $prefix;
 
         return $this;
     }
@@ -139,7 +139,7 @@ class MySqlOptions
      */
     public function withPdoOptions(array $options): self
     {
-        $this->options[ConnectionAbstract::OPT_OPTIONS] = $options;
+        $this->options[Connection::OPT_OPTIONS] = $options;
 
         return $this;
     }

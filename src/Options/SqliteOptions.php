@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Databoss\Options;
 
-use Databoss\ConnectionAbstract;
+use Databoss\Connection;
 use Databoss\DatabaseDriver;
 
 /**
@@ -34,8 +34,8 @@ class SqliteOptions
     public function __construct()
     {
         $this->options = [
-            ConnectionAbstract::OPT_DRIVER => DatabaseDriver::SQLITE->value,
-            ConnectionAbstract::OPT_DATABASE => ':memory:',
+            Connection::OPT_DRIVER => DatabaseDriver::SQLITE->value,
+            Connection::OPT_DATABASE => ':memory:',
         ];
     }
 
@@ -47,7 +47,7 @@ class SqliteOptions
      */
     public function withDatabase(string $database): self
     {
-        $this->options[ConnectionAbstract::OPT_DATABASE] = $database;
+        $this->options[Connection::OPT_DATABASE] = $database;
 
         return $this;
     }
@@ -60,7 +60,7 @@ class SqliteOptions
      */
     public function withPrefix(?string $prefix): self
     {
-        $this->options[ConnectionAbstract::OPT_PREFIX] = $prefix;
+        $this->options[Connection::OPT_PREFIX] = $prefix;
 
         return $this;
     }
@@ -73,7 +73,7 @@ class SqliteOptions
      */
     public function withPdoOptions(array $options): self
     {
-        $this->options[ConnectionAbstract::OPT_OPTIONS] = $options;
+        $this->options[Connection::OPT_OPTIONS] = $options;
 
         return $this;
     }

@@ -91,7 +91,12 @@ $db->update('users', ['age' => 31], ['id' => 1]);
 // Delete
 $db->delete('users', ['id' => 1]);
 
-// Check existence
+// Check if table exists
+if ($db->exists('users')) {
+    // Table exists
+}
+
+// Check if records exist
 if ($db->exists('users', ['email' => 'john@example.com'])) {
     // User exists
 }
@@ -246,6 +251,113 @@ $db = new Connection([
 $users = $db->select('users');
 ```
 
+## DDL Operations
+
+### Create Database or Table
+
+```php
+// Create the current database
+$db->create();
+
+// Create a table
+$db->create('users', [
+    'id' => [
+        'type' => 'INTEGER',
+        'auto_increment' => true,
+        'primary' => true,
+    ],
+    'name' => [
+        'type' => 'VARCHAR(255)',
+        'null' => false,
+    ],
+    'email' => [
+        'type' => 'VARCHAR(255)',
+        'null' => true,
+    ],
+]);
+
+// Create table with explicit primary key
+$db->create('order_items', [
+    'order_id' => ['type' => 'INTEGER', 'null' => false],
+    'product_id' => ['type' => 'INTEGER', 'null' => false],
+    'quantity' => ['type' => 'INTEGER', 'null' => false],
+], ['order_id', 'product_id']);
+```
+
+### Drop Database, Table, or Column
+
+```php
+// Drop the current database
+$db->drop();
+
+// Drop a table
+$db->drop('users');
+
+// Drop a column
+$db->drop('users', 'email');
+```
+
+### Modify Column
+
+```php
+// Modify a column (MySQL and PostgreSQL only, SQLite not supported)
+$db->modify('users', 'email', [
+    'type' => 'VARCHAR(500)',
+    'null' => false,
+]);
+```
+
+### Indexes
+
+```php
+// Create an index with auto-generated name
+$db->index('users', ['id', 'client_id']);
+
+// Create an index with custom name
+$db->index('users', ['id', 'client_id'], 'id_client_id_index');
+
+// Create a unique index
+$db->unique('users', ['email'], 'unique_email');
+
+// Drop an index by name
+$db->unindex('users', 'id_client_id_index');
+
+// Drop an index by columns (auto-generates name)
+$db->unindex('users', ['id', 'client_id']);
+```
+
+### Foreign Keys
+
+```php
+// Create a foreign key with auto-generated name
+$db->foreign('users', 'client_id', ['clients', 'id']);
+
+// Create a foreign key with custom name
+$db->foreign('users', 'client_id', ['clients', 'id'], 'fk_users_client_id');
+```
+
+**Note**: DDL operations handle database-specific differences automatically:
+
+- **Column Type Translation**: Common types are automatically translated to database-specific equivalents:
+    - `BOOLEAN` → `TINYINT(1)` (MySQL), `BOOLEAN` (PostgreSQL), `INTEGER` (SQLite)
+    - `TEXT` types → Appropriate text types for each database
+    - `BLOB`/`BYTEA` → Corrected for each database
+    - `SERIAL`/`BIGSERIAL` → `INT AUTO_INCREMENT` (MySQL), `SERIAL`/`BIGSERIAL` (PostgreSQL), `INTEGER` (SQLite)
+    - `DECIMAL`/`NUMERIC` → `DECIMAL` (MySQL/PostgreSQL), `REAL` (SQLite)
+    - `DATETIME` → `DATETIME` (MySQL), `TIMESTAMP` (PostgreSQL), `TEXT` (SQLite)
+    - `JSON` → `JSON` (MySQL/PostgreSQL), `TEXT` (SQLite)
+    - And many more...
+
+- **Auto-increment columns**: MySQL uses `AUTO_INCREMENT`, PostgreSQL uses `SERIAL`/`BIGSERIAL`, SQLite uses `INTEGER PRIMARY KEY AUTOINCREMENT`
+
+- **MODIFY COLUMN**: Not supported in SQLite (requires table recreation)
+
+- **Index syntax**: Automatically adjusted for MySQL (`DROP INDEX ... ON table`) vs PostgreSQL/SQLite (`DROP INDEX ...`)
+
+- **Foreign keys**: SQLite has limited support (requires `PRAGMA foreign_keys = ON`)
+
+You can use common type names and they will be automatically translated. For example, `'type' => 'BOOLEAN'` works across all databases without needing to know the database-specific type.
+
 ## Raw SQL Queries
 
 ```php
@@ -397,7 +509,7 @@ Tests run against MySQL, PostgreSQL, and SQLite to ensure compatibility across a
 - `delete(string $table, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false` - Delete records
 - `escape(string $value, EscapeMode $mode = EscapeMode::VALUE): string|false` - Escape value/identifier
 - `execute(string $sql, ?array $params = null): int|false` - Execute raw SQL
-- `exists(string $table, array $filter = []): bool` - Check if records exist
+- `exists(string $table, array $filter = []): bool` - Check if table exists (empty filter) or if records exist (with filter)
 - `first(string $table, array $filter = [], array $sort = [], int $start = 0): object|array|false` - Get first record
 - `id(?string $sequence = null): string|false` - Get last insert ID
 - `insert(string $table, array $values): int|false` - Insert record
@@ -408,6 +520,13 @@ Tests run against MySQL, PostgreSQL, and SQLite to ensure compatibility across a
 - `select(string $table, array|string|null $columns = null, array $filter = [], array $sort = [], int $max = 0, int $start = 0): array|false` - Select records
 - `sum(string $table, string $column, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false` - Calculate sum
 - `update(string $table, array $values, array $filter = [], array $sort = [], int $max = 0, int $start = 0): int|false` - Update records
+- `create(?string $table = null, ?array $columns = null, ?array $primaryKey = null): bool` - Create database or table
+- `drop(?string $table = null, ?string $column = null): bool` - Drop database, table, or column
+- `modify(string $table, string $column, array $definition): bool` - Modify a column (MySQL and PostgreSQL only)
+- `index(string $table, string|array $columns, ?string $indexName = null): bool` - Create an index
+- `unique(string $table, string|array $columns, ?string $indexName = null): bool` - Create a unique index
+- `foreign(string $table, string $column, array $references, ?string $constraintName = null): bool` - Create a foreign key
+- `unindex(string $table, string|array $identifier): bool` - Drop an index (by name or columns)
 
 ## License
 
