@@ -163,6 +163,7 @@ class OptionsTest extends TestCase
             ->withDatabase('testdb')
             ->withUsername('sa')
             ->withPassword('YourStrong!Passw0rd')
+            ->withTrustServerCertificate(true) // Required for test environments with self-signed certificates
             ->toArray();
 
         // This should not throw an exception if database is available
