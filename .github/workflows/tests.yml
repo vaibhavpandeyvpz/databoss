@@ -103,11 +103,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y default-mysql-client postgresql-client
 
+      - name: Wait for SQL Server to be ready
+        run: |
+          echo "Waiting for SQL Server..."
+          for i in {1..60}; do
+            if sqlcmd \
+              -S 127.0.0.1 \
+              -U sa \
+              -P 'YourStrong!Passw0rd' \
+              -C \
+              -Q "SELECT 1" >/dev/null 2>&1; then
+              echo "SQL Server is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "SQL Server did not become ready in time"
+          exit 1
+
       - name: Initialize database schemas
         run: |
           mysql -h 127.0.0.1 -u root -proot testdb < dumps/mysql.sql
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d testdb -f dumps/postgres.sql
-          sqlcmd -S 127.0.0.1 -U sa -P 'YourStrong!Passw0rd' -i dumps/sqlserver.sql
+          sqlcmd -S 127.0.0.1 -U sa -P 'YourStrong!Passw0rd' -C -i dumps/sqlserver.sql
 
       - name: Run tests
         run: vendor/bin/phpunit --coverage-text
