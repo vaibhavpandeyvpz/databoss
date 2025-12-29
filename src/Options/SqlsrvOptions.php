@@ -154,9 +154,9 @@ class SqlsrvOptions
     public function withTrustServerCertificate(bool $trust = true): self
     {
         if ($trust) {
-            $this->options['TrustServerCertificate'] = 'yes';
+            $this->options[Connection::OPT_TRUST_SERVER_CERTIFICATE] = true;
         } else {
-            unset($this->options['TrustServerCertificate']);
+            unset($this->options[Connection::OPT_TRUST_SERVER_CERTIFICATE]);
         }
 
         return $this;

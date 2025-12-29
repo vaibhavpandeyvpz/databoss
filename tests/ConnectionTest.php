@@ -888,7 +888,7 @@ class ConnectionTest extends TestCase
                 Connection::OPT_DATABASE => 'testdb',
                 Connection::OPT_USERNAME => 'sa',
                 Connection::OPT_PASSWORD => 'YourStrong!Passw0rd',
-                'TrustServerCertificate' => 'yes', // Required for ODBC Driver 18+ with self-signed certificates in test environments
+                Connection::OPT_TRUST_SERVER_CERTIFICATE => true, // Required for ODBC Driver 18+ with self-signed certificates in test environments
             ])],
         ];
 

@@ -54,6 +54,9 @@ class Connection implements ConnectionInterface
     /** Option key for database username */
     public const OPT_USERNAME = 'username';
 
+    /** Option key for SQL Server trust server certificate */
+    public const OPT_TRUST_SERVER_CERTIFICATE = 'TrustServerCertificate';
+
     /** Regular expression for matching alias patterns (e.g., "column{alias}") */
     private const REGEX_ALIAS = '~(?<name>[a-zA-Z0-9_]+){(?<alias>[a-zA-Z0-9_]+)}~';
 
@@ -235,7 +238,7 @@ class Connection implements ConnectionInterface
         ];
 
         // Add TrustServerCertificate if explicitly set (useful for test environments with self-signed certificates)
-        if (isset($options['TrustServerCertificate']) && $options['TrustServerCertificate'] === 'yes') {
+        if (isset($options[self::OPT_TRUST_SERVER_CERTIFICATE]) && $options[self::OPT_TRUST_SERVER_CERTIFICATE] === true) {
             $parts['TrustServerCertificate'] = 'yes';
         }
 
