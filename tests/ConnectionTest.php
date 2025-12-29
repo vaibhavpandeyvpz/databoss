@@ -1655,6 +1655,7 @@ class ConnectionTest extends TestCase
                 Connection::OPT_USERNAME => 'sa',
                 Connection::OPT_PASSWORD => 'YourStrong!Passw0rd',
                 Connection::OPT_PREFIX => 'test_',
+                Connection::OPT_TRUST_SERVER_CERTIFICATE => true, // Required for ODBC Driver 18+ with self-signed certificates in test environments
             ]),
             'sqlite' => new Connection([
                 Connection::OPT_DRIVER => DatabaseDriver::SQLITE->value,
