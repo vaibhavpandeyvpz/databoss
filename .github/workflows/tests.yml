@@ -56,10 +56,7 @@ jobs:
           SA_PASSWORD: "YourStrong!Passw0rd"
           MSSQL_PID: "Developer"
         options: >-
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong!Passw0rd -Q 'SELECT 1' || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+          --health-cmd "exit 0"
 
     steps:
       - name: Checkout code
@@ -97,6 +94,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y default-mysql-client postgresql-client
+
+      - name: Wait for SQL Server to be ready
+        run: |
+          echo "Waiting for SQL Server..."
+          for i in {1..60}; do
+            if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) \
+              /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong!Passw0rd' -Q "SELECT 1" >/dev/null 2>&1; then
+              echo "SQL Server is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "SQL Server did not become ready in time"
+          exit 1
 
       - name: Initialize database schemas
         run: |
